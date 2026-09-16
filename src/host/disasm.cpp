@@ -1,5 +1,6 @@
 #include "host/disasm.h"
 
+#include <bit>
 #include <cstdio>
 
 namespace gba::host {
@@ -132,8 +133,8 @@ std::string disasmArm(uint32_t op, uint32_t pc) {
             const char* psr = (op & 0x400000) ? "spsr" : "cpsr";
             if (op & 0x200000) {
                 const std::string src = (op & 0x2000000)
-                                            ? "#" + hex(__builtin_rotateright32(op & 0xFF,
-                                                                                ((op >> 8) & 0xF) * 2))
+                                            ? "#" + hex(std::rotr(uint32_t(op & 0xFF),
+                                                                      int((op >> 8) & 0xF) * 2))
                                             : reg(op & 0xF);
                 return "msr" + c + "   " + psr + ", " + src;
             }
@@ -141,7 +142,7 @@ std::string disasmArm(uint32_t op, uint32_t pc) {
         }
         const std::string src =
             (op & 0x2000000)
-                ? "#" + hex(__builtin_rotateright32(op & 0xFF, ((op >> 8) & 0xF) * 2))
+                ? "#" + hex(std::rotr(uint32_t(op & 0xFF), int((op >> 8) & 0xF) * 2))
                 : shifted(op);
         const std::string name = std::string(kDataOp[which]) + c + (setFlags ? "s" : "");
         const std::string pad(name.size() >= 6 ? 1 : 6 - name.size(), ' ');
