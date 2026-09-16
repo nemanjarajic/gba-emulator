@@ -64,11 +64,37 @@ struct InstancePool {
     // numInstances * OBS_W * OBS_H bytes, one instance after another.
     void readObservations(VkContext& ctx, std::vector<uint8_t>& out);
 
+    // --- snapshots and per-instance reset -----------------------------------
+
+    // One instance's entire machine: registers and every memory region. This is
+    // what an episode reset restores, and it has to include memory -- restoring
+    // registers alone leaves the game's own state behind and the next episode
+    // starts mid-scene.
+    struct Snapshot {
+        GbaState state{};
+        std::vector<uint32_t> ewram, iwram, vram, pram, oam, io, sram;
+    };
+
+    void snapshotInstance(VkContext& ctx, uint32_t instance, Snapshot& out);
+
+    // Restores a snapshot into the listed instances, leaving every other
+    // instance untouched. Episodes end at different times, so resetting the
+    // whole pool is not an option.
+    void restoreInstances(VkContext& ctx, const std::vector<uint32_t>& instances,
+                          const Snapshot& snap);
+
     // Gathers one word from the same offset in every instance's slice of a
     // region -- the cheap way to poll a reward signal or a game-state variable
     // without reading back whole regions.
     void readProbe(VkContext& ctx, Buffer& region, uint32_t wordsPerInstance,
                    uint32_t wordIndex, std::vector<uint32_t>& out);
+
+    // The same, addressed by GBA address rather than by region and index, and
+    // for several addresses at once. A reward function usually reads more than
+    // one variable. `out` is filled with one word per address per instance,
+    // address-major: out[a * numInstances + i].
+    void readProbes(VkContext& ctx, const std::vector<uint32_t>& addresses,
+                    std::vector<uint32_t>& out);
 
     // Total bytes allocated, for reporting the instance-count budget.
     uint64_t totalBytes() const;

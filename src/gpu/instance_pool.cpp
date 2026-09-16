@@ -164,6 +164,89 @@ void InstancePool::readProbe(VkContext& ctx, Buffer& region, uint32_t wordsPerIn
                        (VkDeviceSize(i) * wordsPerInstance + wordIndex) * sizeof(uint32_t));
 }
 
+namespace {
+
+// One instance's slice of a region. Contiguous in the default layout; the
+// interleaved (GBA_SOA) build would need a strided gather here instead.
+void readSlice(VkContext& ctx, Buffer& buf, uint32_t wordsPerInstance, uint32_t inst,
+               std::vector<uint32_t>& out) {
+    out.resize(wordsPerInstance);
+    downloadBuffer(ctx, buf, out.data(), VkDeviceSize(wordsPerInstance) * 4,
+                   VkDeviceSize(inst) * wordsPerInstance * 4);
+}
+
+void writeSlice(VkContext& ctx, Buffer& buf, uint32_t wordsPerInstance, uint32_t inst,
+                const std::vector<uint32_t>& in) {
+    uploadBuffer(ctx, buf, in.data(), VkDeviceSize(wordsPerInstance) * 4,
+                 VkDeviceSize(inst) * wordsPerInstance * 4);
+}
+
+}  // namespace
+
+void InstancePool::snapshotInstance(VkContext& ctx, uint32_t instance, Snapshot& out) {
+    std::vector<GbaState> states;
+    downloadStates(ctx, states);
+    out.state = states[instance];
+
+    readSlice(ctx, ewram, EWRAM_WORDS, instance, out.ewram);
+    readSlice(ctx, iwram, IWRAM_WORDS, instance, out.iwram);
+    readSlice(ctx, vram, VRAM_WORDS, instance, out.vram);
+    readSlice(ctx, pram, PRAM_WORDS, instance, out.pram);
+    readSlice(ctx, oam, OAM_WORDS, instance, out.oam);
+    readSlice(ctx, io, IO_WORDS, instance, out.io);
+    if (hasSave) readSlice(ctx, sram, SRAM_WORDS, instance, out.sram);
+}
+
+void InstancePool::restoreInstances(VkContext& ctx, const std::vector<uint32_t>& instances,
+                                    const Snapshot& snap) {
+    if (instances.empty()) return;
+
+    // States are one array, so read it once, patch the entries and write once
+    // rather than doing a round trip per instance.
+    std::vector<GbaState> states;
+    downloadStates(ctx, states);
+    for (uint32_t i : instances) {
+        if (i >= numInstances) continue;
+        states[i] = snap.state;
+        states[i].inst = i;  // the snapshot came from a different instance
+    }
+    uploadStates(ctx, states);
+
+    for (uint32_t i : instances) {
+        if (i >= numInstances) continue;
+        writeSlice(ctx, ewram, EWRAM_WORDS, i, snap.ewram);
+        writeSlice(ctx, iwram, IWRAM_WORDS, i, snap.iwram);
+        writeSlice(ctx, vram, VRAM_WORDS, i, snap.vram);
+        writeSlice(ctx, pram, PRAM_WORDS, i, snap.pram);
+        writeSlice(ctx, oam, OAM_WORDS, i, snap.oam);
+        writeSlice(ctx, io, IO_WORDS, i, snap.io);
+        if (hasSave && !snap.sram.empty()) writeSlice(ctx, sram, SRAM_WORDS, i, snap.sram);
+    }
+}
+
+void InstancePool::readProbes(VkContext& ctx, const std::vector<uint32_t>& addresses,
+                              std::vector<uint32_t>& out) {
+    out.assign(addresses.size() * numInstances, 0u);
+    std::vector<uint32_t> one;
+    for (size_t a = 0; a < addresses.size(); ++a) {
+        const uint32_t addr = addresses[a];
+        Buffer* region = nullptr;
+        uint32_t words = 0, offset = 0;
+        switch ((addr >> 24) & 0xF) {
+            case 0x2: region = &ewram; words = EWRAM_WORDS; offset = addr & (EWRAM_SIZE - 1); break;
+            case 0x3: region = &iwram; words = IWRAM_WORDS; offset = addr & (IWRAM_SIZE - 1); break;
+            case 0x5: region = &pram;  words = PRAM_WORDS;  offset = addr & (PRAM_SIZE - 1);  break;
+            case 0x6: region = &vram;  words = VRAM_WORDS;  offset = addr & 0x1FFFF;          break;
+            case 0x7: region = &oam;   words = OAM_WORDS;   offset = addr & (OAM_SIZE - 1);   break;
+            case 0x4: region = &io;    words = IO_WORDS;    offset = addr & (IO_SIZE - 1);    break;
+            default: break;  // ROM and BIOS are shared and constant; nothing to probe
+        }
+        if (!region) continue;
+        readProbe(ctx, *region, words, offset >> 2, one);
+        std::copy(one.begin(), one.end(), out.begin() + long(a) * numInstances);
+    }
+}
+
 uint64_t InstancePool::totalBytes() const {
     return bios.size + rom.size + ewram.size + iwram.size + vram.size + pram.size + oam.size +
            io.size + sram.size + fb.size + state.size + input.size + obs.size;

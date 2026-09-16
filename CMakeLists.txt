@@ -120,6 +120,12 @@ add_executable(m7_io src/app/m7_io.cpp)
 target_link_libraries(m7_io PRIVATE gba_host)
 target_compile_options(m7_io PRIVATE ${GBA_WARNINGS})
 
+# The C ABI used by the reinforcement-learning bindings in rl/.
+add_library(gba_env SHARED src/api/gba_env.cpp)
+target_link_libraries(gba_env PRIVATE gba_host gba_vk)
+target_compile_options(gba_env PRIVATE ${GBA_WARNINGS})
+set_target_properties(gba_env PROPERTIES CXX_VISIBILITY_PRESET hidden)
+
 # Interactive player and debugger. Optional: only built if SDL3 is present.
 find_package(SDL3 QUIET)
 if(SDL3_FOUND)

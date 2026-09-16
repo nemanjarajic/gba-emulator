@@ -69,6 +69,13 @@ same ROM on both builds in lockstep and the first register mismatch names the
 exact broken opcode. Debugging a shader-resident ARM7TDMI without that oracle
 is not realistic.
 
+## Reinforcement learning
+
+`rl/` holds a Python package wrapping the emulator as a vectorised environment:
+per-instance actions, observations, RAM probes for reward signals, and
+per-instance episode reset. No model lives there -- it is the environment only.
+See `rl/README.md`.
+
 ## Running many instances
 
 ```sh

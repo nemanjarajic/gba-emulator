@@ -38,4 +38,16 @@ done
 python3 tools/make_bench_roms.py >/dev/null
 run M9 ./build/m9_harness build/roms/input_echo.gba 1024 12
 
+# The Python RL bindings, if the virtual environment has been created.
+if [ -x rl/.venv/bin/python ]; then
+    printf '%-12s ' "RL-python"
+    if out=$(rl/.venv/bin/python rl/examples/smoke_test.py 2>&1); then
+        echo "$out" | tail -1
+    else
+        echo "FAILED"; echo "$out" | tail -20 | sed 's/^/    /'; fail=1
+    fi
+else
+    printf '%-12s %s\n' "RL-python" "(skipped: run python3 -m venv rl/.venv)"
+fi
+
 exit $fail
