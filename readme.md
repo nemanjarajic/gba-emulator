@@ -36,6 +36,7 @@ cmake --build build
 ./build/m5_ppu             # M5 gate: bitmap modes, writes mode{3,4,5}.png
 ./build/m6_sprites         # M6 gate: sprite flips, sizes, bounds
 ./build/m6_effects         # M6 gate: priority, windows, blending, affine
+./build/m6_coverage        # M6 gate: 8bpp, big maps, sprite sizes, mosaic, obj window
 ./build/m7_io              # M7 gate: keypad IRQ, FIFO DMA, SoftReset, IntrWait
 ./build/render_rom <rom> [frames] [out.png]   # render any ROM
 ./tools/run_gates.sh       # everything at once
@@ -128,10 +129,12 @@ windows including exact edge semantics, alpha blending, brightness increase and
 decrease, and affine sprites (an identity matrix reproduces a plain sprite
 exactly).
 
-Implemented but **not yet covered by a test**: mosaic, the object window,
-semi-transparent sprites, 8bpp background tiles, background maps wider or
-taller than 256, two-dimensional sprite tile mapping, and sprite sizes other
-than 16x16. These are the first places to look if a real game renders wrongly.
+Also verified (`m6_coverage`): 8bpp background tiles, background maps of every
+screen size with scrolling between screenblocks, one- and two-dimensional
+sprite tile mapping, all twelve sprite shape/size combinations, mosaic, the
+object window, and semi-transparent sprites. Every one of these passed first
+time, which is worth knowing: they were written from the documentation and then
+left unexercised until now.
 
 Rendering is scanline granular, so mid-scanline register writes -- raster
 effects like a per-line gradient or a wobble -- will not reproduce. That is a

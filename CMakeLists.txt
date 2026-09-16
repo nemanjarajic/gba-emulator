@@ -98,6 +98,11 @@ target_link_libraries(m6_sprites PRIVATE gba_host gba_vk)
 add_dependencies(m6_sprites shaders)
 target_compile_options(m6_sprites PRIVATE -Wall -Wextra)
 
+add_executable(m6_coverage src/app/m6_coverage.cpp)
+target_link_libraries(m6_coverage PRIVATE gba_host gba_vk)
+add_dependencies(m6_coverage shaders)
+target_compile_options(m6_coverage PRIVATE -Wall -Wextra)
+
 add_executable(m6_effects src/app/m6_effects.cpp)
 target_link_libraries(m6_effects PRIVATE gba_host gba_vk)
 add_dependencies(m6_effects shaders)

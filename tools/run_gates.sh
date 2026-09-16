@@ -24,6 +24,7 @@ run M5 ./build/m5_ppu
 run M7-io ./build/m7_io
 run M6-sprites ./build/m6_sprites
 run M6-effects ./build/m6_effects
+run M6-coverage ./build/m6_coverage
 printf '%-12s\n' "M6-roms"
 for r in stripes shades hello; do
     printf '    %-10s ' "$r"
