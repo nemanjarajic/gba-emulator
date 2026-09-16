@@ -1,0 +1,30 @@
+#version 450
+#extension GL_EXT_debug_printf : require
+#extension GL_KHR_shader_subgroup_basic : require
+
+// M0 smoke test: prove the toolchain end to end -- glslc -> SPIR-V ->
+// MoltenVK -> Metal -> readback -- and confirm debugPrintfEXT works, since
+// that is the only in-shader tracing available on this machine.
+
+layout(local_size_x = 64) in;
+
+layout(std430, binding = 0) buffer Data {
+    uint v[];
+};
+
+layout(push_constant) uniform PC {
+    uint n;
+    uint traceLane;  // print this one lane; 0xffffffff disables
+} pc;
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.n) return;
+
+    uint x = v[i];
+    v[i] = x * x;
+
+    if (i == pc.traceLane) {
+        debugPrintfEXT("lane %u: %u^2 = %u (subgroup size %u)", i, x, x * x, gl_SubgroupSize);
+    }
+}
