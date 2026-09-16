@@ -53,6 +53,7 @@ add_compute_shader(src/shader/square.comp)
 add_compute_shader(src/shader/core_compile_test.comp)
 add_compute_shader(src/shader/gba.comp)
 add_compute_shader(src/shader/gba_soa.comp)
+add_compute_shader(src/shader/gba_bench_pad4.comp)
 
 add_custom_target(shaders ALL DEPENDS ${SHADER_OUTPUTS})
 

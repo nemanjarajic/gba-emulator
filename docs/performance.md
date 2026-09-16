@@ -179,6 +179,59 @@ Two fixes recovered a large part of it:
 
 Together: CPU 77.6 → 105.2 Mcycle/s (+35%), GPU at 4096 862 → 1074 (+25%).
 
+## The kernel is not the problem; the state struct is
+
+The shader is 2.15 MB of SPIR-V stripped of debug info, against 2.7 KB for a
+trivial one, and that looked like the obvious explanation for per-instance
+throughput being far below what M4 measured. It is not.
+
+**Kernel size, tested directly.** Shader variants were built identical to
+`gba.comp` except for a block of arithmetic guarded by `if (g_cycles ==
+0xDEADBEEFu)` -- a condition on a push constant, so the compiler cannot
+eliminate it and it never executes:
+
+| SPIR-V | Mcycle/s |
+|---|---|
+| 2.87 MB (unmodified) | 877, 884 |
+| 8.08 MB (+5 MB dead) | 847, 854 |
+
+Tripling the kernel costs about 3%. The instruction-cache hypothesis is wrong.
+
+**The state struct, tested the same way.** `GbaState` is loaded into shader
+locals for the duration of a dispatch. Padding it with unused words, at 4096
+instances on `arm.gba`:
+
+| GbaState | Mcycle/s |
+|---|---|
+| 83 words | 877, 876, 869 |
+| **87 words** | **304, 302, 303** |
+| 115 words | 370 |
+| 179 words | 322 |
+
+**Four extra words cost 2.9x.** The struct sits exactly at the point where the
+register allocator stops fitting it and spills to memory, and every field
+access then becomes a memory access. It is reproducible to within a percent
+across runs, and `src/shader/gba_bench_pad4.comp` demonstrates it.
+
+Two consequences:
+
+1. **Adding any field to `GbaState` costs roughly two thirds of the
+   emulator's throughput.** The static assertion in `src/core/state.h` now
+   documents this and fails if the struct grows. New per-instance state belongs
+   in its own storage buffer, read only where it is used.
+2. The growth from 52 words at M4 to 83 today is very likely what accounts for
+   most of the difference between the M4-era measurements and these. The
+   scheduler work M7 added is *not* the cause: variants with `scheduler_tick`
+   or `irq_check` compiled out measure within noise of the full kernel
+   (848 and 869 against 873).
+
+The obvious next optimisation is to split the struct, keeping the ~27 hot words
+(the register file, the cycle counters, the cached flags) in locals and moving
+the ~56 cold ones (banked registers, DMA and timer arrays, flash state) into
+the storage buffer, touched only on a mode switch, a DMA or a timer tick. That
+would put real distance between the working set and the cliff. It has not been
+done, so there is no measurement for how much it would buy.
+
 ## Two hypotheses that were wrong
 
 Recorded because the measurements cost real time and the conclusions are not
@@ -188,11 +241,8 @@ obvious:
   holds a 240-word `obj_line` array, ~960 bytes of private memory per thread,
   which looked like an obvious occupancy killer. Compiling it out entirely
   changed throughput by 2% (1059 vs 1079).
-- **Loop unrolling is not what makes the kernel huge.** The kernel is 2.15 MB
-  of SPIR-V stripped of debug info, against 2.7 KB for a trivial shader, and
-  `-O` unrolling the 240-pixel and 128-sprite loops seemed the likely cause.
+- **Loop unrolling is not what makes the kernel huge.** `-O` unrolling the
+  240-pixel and 128-sprite loops seemed the likely cause of the 2.15 MB kernel.
   Annotating every large loop with `[[dont_unroll]]` changed the size by zero
-  bytes. The size comes from the ARM and Thumb decoders themselves being
-  inlined into one enormous function. Whether that exceeds the instruction
-  cache is still untested, and remains the most likely explanation for the gap
-  between these numbers and the M4-era 1.09 MHz per instance.
+  bytes. The size comes from the ARM and Thumb decoders being inlined into one
+  enormous function -- and, as measured above, does not matter anyway.

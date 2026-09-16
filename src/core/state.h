@@ -82,6 +82,12 @@ struct GbaState {
     U32 halted;      // set by the HALT BIOS call; cleared by an interrupt
     U32 scanline;    // current VCOUNT
     U32 line_cycle;  // cycles elapsed within the current scanline
+
+#ifdef GBA_BENCH_PAD
+    // Benchmark-only: makes the state struct larger without changing what the
+    // emulator does, to measure what state size alone costs.
+    U32 bench_pad[GBA_BENCH_PAD];
+#endif
 };
 
 // ---------------------------------------------------------------------------
@@ -193,12 +199,30 @@ KCONST U32 FLAG_OBSERVE = 2u;
 // a single download rather than a strided gather.
 #define OBS_IDX(inst, w) ((inst) * OBS_WORDS + (w))
 
-#ifndef GBA_GLSL
-// GbaState is copied verbatim between host memory and a std430 storage buffer,
-// so its C++ layout must match what GLSL sees. Every member being a U32 or an
-// array of U32 makes that true (std430 gives both a 4-byte stride); this
-// catches a member of any other type being added later.
-static_assert(sizeof(GbaState) == 83u * 4u, "GbaState must stay std430-compatible");
+#if !defined(GBA_GLSL) && !defined(GBA_BENCH_PAD)
+// Two things are being asserted here, and the second one matters far more than
+// it looks.
+//
+// Layout: GbaState is copied verbatim between host memory and a std430 storage
+// buffer, so its C++ layout must match what GLSL sees. Every member being a U32
+// or an array of U32 makes that true, and this catches a member of any other
+// type being added later.
+//
+// Size: the shader loads this entire struct into locals for the duration of a
+// dispatch, and on an Apple GPU 83 words is the largest it can be before the
+// register allocator spills and occupancy collapses. Measured at 4096
+// instances on arm.gba:
+//
+//     83 words   872 Mcycle/s
+//     87 words   303 Mcycle/s      <- four more words, 2.9x slower
+//
+// So adding even one field to this struct costs roughly two thirds of the
+// emulator's throughput. If you need more per-instance state, put it in its
+// own storage buffer and read it only where it is used, or shrink something
+// else here first. src/shader/gba_bench_pad4.comp reproduces the measurement.
+static_assert(sizeof(GbaState) == 83u * 4u,
+              "GbaState must stay std430-compatible AND at 83 words: see the note above, "
+              "growing it past 83 costs ~3x throughput");
 #endif
 
 #endif  // GBA_CORE_STATE_H

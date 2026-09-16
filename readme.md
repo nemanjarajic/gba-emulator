@@ -106,6 +106,14 @@ instructions), `WATCH=<addr>` (report every instruction that changes a word),
 `TRACEPC=<addr>` (dump registers through a code range) and `HIST=1` (a profile
 of which ROM regions the game actually executes).
 
+## A trap worth knowing about
+
+`GbaState` is 83 words, and that is the largest it can be before the shader's
+register allocator spills and throughput drops by about 3x. Adding a single
+field to it costs two thirds of the emulator's speed. The static assertion in
+`src/core/state.h` fails if it grows; new per-instance state belongs in its own
+storage buffer. See `docs/performance.md` for the measurements.
+
 ## What the hardware covers
 
 Implemented and gated: the ARM7TDMI in both instruction sets, the full memory

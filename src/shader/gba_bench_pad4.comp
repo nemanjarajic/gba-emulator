@@ -1,0 +1,14 @@
+#version 450
+// Benchmark-only: gba.comp with 4 extra words in GbaState.
+#define GBA_BENCH_PAD 4
+#include "core.h"
+#include "core.inc"
+layout(local_size_x = 64) in;
+void main() {
+    uint inst = gl_GlobalInvocationID.x;
+    if (inst >= g_num_instances) return;
+    GbaState st = g_state[inst];
+    st.inst = inst;
+    step_cycles(st, g_cycles);
+    g_state[inst] = st;
+}
