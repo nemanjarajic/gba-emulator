@@ -21,6 +21,7 @@ printf '%-12s\n' "M2/M3"
 ./tools/run_cpu_tests.sh | sed 's/^/    /' || fail=1
 run M4 ./build/m4_gpu_test
 run M5 ./build/m5_ppu
+run M7-io ./build/m7_io
 run M6-sprites ./build/m6_sprites
 run M6-effects ./build/m6_effects
 printf '%-12s\n' "M6-roms"

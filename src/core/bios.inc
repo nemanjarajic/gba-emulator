@@ -354,21 +354,54 @@ CORE_FN void bios_bg_affine_set(INOUT(GbaState) st) {
 // real SWI exception, which the installed vector table turns into a return.
 CORE_FN bool bios_swi(INOUT(GbaState) st, U32 number) {
     switch (number) {
+        case 0x00u: {  // SoftReset
+            // The byte at 0x03007FFA chooses where to restart: non-zero means
+            // the EWRAM entry point rather than the cartridge. It must be read
+            // before the scratch area around it is cleared.
+            U32 target = (bus_read8(st, 0x03007FFAu) != 0u) ? 0x02000000u : 0x08000000u;
+            for (U32 a = 0x03007E00u; a < 0x03008000u; a = a + 4u) bus_write32(st, a, 0u);
+            st.bank_r13[BANK_SVC] = 0x03007FE0u;
+            st.bank_r13[BANK_IRQ] = 0x03007FA0u;
+            st.bank_r13[BANK_USR] = 0x03007F00u;
+            cpu_set_mode(st, MODE_SYS);
+            st.cpsr = MODE_SYS;
+            st.r[13] = 0x03007F00u;
+            cpu_set_reg(st, 15u, target);
+            return true;
+        }
+
         case 0x01u: bios_ram_reset(st, st.r[0]); return true;
 
         case 0x02u:  // Halt
             st.halted = 1u;
             return true;
 
-        case 0x04u:  // IntrWait
-        case 0x05u:  // VBlankIntrWait
-            // Modelled as "halt until any enabled interrupt". The real call
-            // loops until one of the specific sources in r1 arrives; games
-            // invariably re-check their own flag afterwards, so returning early
-            // costs a spin rather than correctness.
-            if (number == 0x05u) io_set16(st, REG_IE, io_get16(st, REG_IE) | IRQ_VBLANK);
+        case 0x04u:    // IntrWait(discardOld, mask)
+        case 0x05u: {  // VBlankIntrWait == IntrWait(1, IRQ_VBLANK)
+            U32 mask = (number == 0x05u) ? IRQ_VBLANK : (st.r[1] & 0xFFFFu);
+
+            // The SDK's interrupt handler records served interrupts here. If
+            // one we are waiting for has already arrived, consume it and
+            // return without losing a frame.
+            U32 served = bus_read16(st, BIOS_INTR_FLAGS);
+            if ((served & mask) != 0u) {
+                bus_write16(st, BIOS_INTR_FLAGS, served & (~mask));
+                return true;
+            }
+
+            // Nothing to do unless something can actually wake us. Waiting on a
+            // source that is not enabled would halt forever.
+            if ((io_get16(st, REG_IE) & mask) == 0u) return true;
+
+            // Halt, and rewind to this SWI so that it runs again once the
+            // handler returns. A different interrupt therefore resumes the
+            // wait rather than ending it, which is what the real call does.
             st.halted = 1u;
+            U32 instr = st.r[15] - (((st.cpsr & CPSR_T) != 0u) ? 4u : 8u);
+            st.r[15] = instr;
+            st.pc_dirty = 1u;
             return true;
+        }
 
         case 0x06u: {  // Div: r0 / r1
             if (st.r[1] == 0u) return true;  // hardware is undefined here
@@ -401,8 +434,10 @@ CORE_FN bool bios_swi(INOUT(GbaState) st, U32 number) {
         case 0x14u: case 0x15u: bios_rle(st); return true;
 
         default:
-            // SoftReset, the multiplayer and sound-driver calls, and the
-            // diff-filter decompressors are not implemented.
+            // Still unimplemented: the sound-driver calls (0x1A-0x2A), the
+            // multiplayer/serial helpers, MidiKey2Freq, and the diff-filter
+            // decompressors (0x16-0x18). Falling through takes a real SWI
+            // exception, which the installed vector table turns into a return.
             return false;
     }
 }

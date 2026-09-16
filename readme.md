@@ -36,6 +36,7 @@ cmake --build build
 ./build/m5_ppu             # M5 gate: bitmap modes, writes mode{3,4,5}.png
 ./build/m6_sprites         # M6 gate: sprite flips, sizes, bounds
 ./build/m6_effects         # M6 gate: priority, windows, blending, affine
+./build/m7_io              # M7 gate: keypad IRQ, FIFO DMA, SoftReset, IntrWait
 ./build/render_rom <rom> [frames] [out.png]   # render any ROM
 ./tools/run_gates.sh       # everything at once
 ```
@@ -104,6 +105,20 @@ instructions), `WATCH=<addr>` (report every instruction that changes a word),
 `TRACEPC=<addr>` (dump registers through a code range) and `HIST=1` (a profile
 of which ROM regions the game actually executes).
 
+## What the hardware covers
+
+Implemented and gated: the ARM7TDMI in both instruction sets, the full memory
+map, all four DMA channels (immediate, VBlank, HBlank and the audio FIFO
+trigger), the four timers with prescalers and cascade, the interrupt controller,
+keypad interrupts, 128 KiB Flash saves, and a BIOS covering the arithmetic
+helpers, the decompressors, the affine matrix helpers, SoftReset and IntrWait.
+
+**Not implemented:** audio output (the FIFO DMA drains so a sound driver does
+not stall, but nothing is mixed or played), the serial port, the cartridge RTC
+that Pokemon Emerald uses for time-based events, and the BIOS sound-driver,
+multiplayer and diff-filter calls. An unimplemented SWI takes a real exception,
+which the installed vector table turns into a return rather than a crash.
+
 ## What the PPU covers
 
 Verified against test ROMs or explicit checks: text backgrounds (modes 0-2),
@@ -152,7 +167,7 @@ They were implemented and gated together.
 | M4 | Same core on GPU, verified against CPU | **done** |
 | M5 | PPU bitmap modes 3/4/5 — first pixels | **done** |
 | M6 | Tiled modes, sprites, windows, blending | **done** |
-| M7 | DMA, timers, interrupts, BIOS, Flash saves | **mostly** |
+| M7 | DMA, timers, interrupts, BIOS, Flash saves | **done** |
 | M8 | Scale out; measure divergence and memory layout | **done** |
 | M9 | Throughput harness | **done** |
 

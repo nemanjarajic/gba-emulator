@@ -53,6 +53,11 @@ CORE_FN void scheduler_tick(INOUT(GbaState) st, U32 cycles) {
             dma_run(st, DMA_VBLANK);
         }
         if ((dispstat & 0x04u) != 0u && (dispstat & 0x20u) != 0u) irq_raise(st, IRQ_VCOUNT);
+
+        // Keypad interrupts are level triggered, so the condition is
+        // re-evaluated rather than fired on a change. Once a scanline is often
+        // enough and costs one register read.
+        keypad_check(st);
     }
 }
 

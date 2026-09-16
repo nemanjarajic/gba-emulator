@@ -103,6 +103,10 @@ target_link_libraries(m6_effects PRIVATE gba_host gba_vk)
 add_dependencies(m6_effects shaders)
 target_compile_options(m6_effects PRIVATE -Wall -Wextra)
 
+add_executable(m7_io src/app/m7_io.cpp)
+target_link_libraries(m7_io PRIVATE gba_host)
+target_compile_options(m7_io PRIVATE -Wall -Wextra)
+
 add_executable(m8_bench src/app/m8_bench.cpp)
 target_link_libraries(m8_bench PRIVATE gba_host gba_vk)
 add_dependencies(m8_bench shaders)

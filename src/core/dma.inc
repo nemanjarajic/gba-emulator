@@ -12,6 +12,13 @@
 // Hardware stalls the CPU for the duration anyway, so the visible difference is
 // only in timing, which is already scanline granular.
 
+// True when a channel is configured as an audio FIFO feed.
+CORE_FN bool dma_is_fifo(INOUT(GbaState) st, U32 ch) {
+    if (ch != 1u && ch != 2u) return false;
+    U32 dst = io_get32(st, REG_DMA0SAD + ch * 12u + 4u) & 0x0FFFFFFFu;
+    return (dst == 0x040000A0u) || (dst == 0x040000A4u);
+}
+
 CORE_FN void dma_run(INOUT(GbaState) st, U32 trigger) {
     for (U32 ch = 0u; ch < 4u; ++ch) {
         if ((st.dma_enabled & (1u << ch)) == 0u) continue;
@@ -33,6 +40,18 @@ CORE_FN void dma_run(INOUT(GbaState) st, U32 trigger) {
         U32 dst = st.dma_dst[ch];
         U32 n = st.dma_count[ch];
 
+        // An audio FIFO feed always moves exactly four words to a fixed
+        // address, whatever the count and destination-control fields say, and
+        // stays armed for the next timer overflow. Without this the channel
+        // never drains and a sound driver waiting for buffer space stalls.
+        bool fifo = (trigger == DMA_SPECIAL) && dma_is_fifo(st, ch);
+        if (fifo) {
+            word = true;
+            step = 4u;
+            dst_ctl = 2u;  // fixed
+            n = 4u;
+        }
+
         NO_UNROLL for (U32 i = 0u; i < n; ++i) {
             if (word) bus_write32(st, dst, bus_read32(st, src));
             else      bus_write16(st, dst, bus_read16(st, src));
@@ -46,6 +65,13 @@ CORE_FN void dma_run(INOUT(GbaState) st, U32 trigger) {
         st.dma_dst[ch] = dst;
 
         if ((ctrl & 0x4000u) != 0u) irq_raise(st, IRQ_DMA0 << ch);
+
+        if (fifo) {
+            // Source advances, destination does not, and the channel remains
+            // enabled for the next overflow.
+            st.dma_src[ch] = src;
+            continue;
+        }
 
         // A repeating channel stays armed for the next trigger. Destination
         // control 3 additionally reloads the destination, which is how the

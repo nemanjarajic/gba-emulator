@@ -1,6 +1,7 @@
 #ifndef GBA_CORE_TIMER_INC
 #define GBA_CORE_TIMER_INC
 
+#include "dma.inc"
 #include "io.inc"
 #include "state.h"
 #include "types.h"
@@ -55,6 +56,15 @@ CORE_FN void timer_tick(INOUT(GbaState) st, U32 cycles) {
         // timer per instruction.
 
         if (overflows != 0u && (ctrl & 0x0040u) != 0u) irq_raise(st, IRQ_TIMER0 << t);
+
+        // Timer 0 or 1 overflowing is what clocks the audio FIFOs; SOUNDCNT_H
+        // bit 10 picks the timer for FIFO A and bit 14 for FIFO B.
+        if (overflows != 0u && t < 2u) {
+            U32 soundcnt = io_get16(st, REG_SOUNDCNT_H);
+            if (t == ((soundcnt >> 10u) & 1u) || t == ((soundcnt >> 14u) & 1u))
+                dma_run(st, DMA_SPECIAL);
+        }
+
         previous_overflows = overflows;
     }
 }
