@@ -1,19 +1,36 @@
-# Source this before building or running:  source env.sh
+# Source this from the repository root before building or running:
+#   source env.sh
 #
-# Homebrew's Vulkan packages do not put the MoltenVK ICD manifest where the
-# loader looks by default. Note it lives under etc/vulkan, NOT share/vulkan --
-# without VK_DRIVER_FILES the loader reports "Found no drivers!" even though
-# MoltenVK is correctly installed.
+# Two Homebrew-specific problems and one macOS one are handled here.
 
 export PATH="/opt/homebrew/bin:$PATH"
+
+# 1. Homebrew puts the MoltenVK ICD manifest under etc/vulkan, not the
+#    share/vulkan the loader searches. Without this the loader reports
+#    "Found no drivers!" despite a correct install.
 export VK_DRIVER_FILES="/opt/homebrew/etc/vulkan/icd.d/MoltenVK_icd.json"
-export VK_LAYER_PATH="/opt/homebrew/share/vulkan/explicit_layer.d"
 
-# Uncomment to make validation errors abort immediately rather than just print.
-# export VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT
-
-# The Homebrew validation layer manifest names its library relatively
-# ("libVkLayer_khronos_validation.dylib"), so dyld cannot find it without a
-# search path. Without this, vkCreateInstance fails with VK_ERROR_LAYER_NOT_PRESENT
-# even though the loader locates and parses the manifest correctly.
-export DYLD_LIBRARY_PATH="/opt/homebrew/lib:${DYLD_LIBRARY_PATH}"
+# 2. Homebrew's validation layer manifest names its library relatively
+#    ("libVkLayer_khronos_validation.dylib"), so dyld cannot find it and
+#    vkCreateInstance fails with VK_ERROR_LAYER_NOT_PRESENT -- even though the
+#    loader locates and parses the manifest correctly.
+#
+# 3. The obvious fix, DYLD_LIBRARY_PATH, does not survive a shell script:
+#    macOS System Integrity Protection strips every DYLD_* variable when it
+#    launches a protected binary, and /bin/sh is protected. So any wrapper
+#    script would silently lose the layer even though running the same binary
+#    straight from the terminal works.
+#
+# Rewriting the manifest with an absolute library path fixes both at once and
+# needs no DYLD_* variable at all.
+_layer_src="/opt/homebrew/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json"
+_layer_dir="$PWD/build/vulkan/explicit_layer.d"
+if [ -f "$_layer_src" ]; then
+    mkdir -p "$_layer_dir"
+    sed 's|"library_path": *"lib|"library_path": "/opt/homebrew/lib/lib|' \
+        "$_layer_src" > "$_layer_dir/VkLayer_khronos_validation.json"
+    export VK_LAYER_PATH="$_layer_dir"
+else
+    export VK_LAYER_PATH="/opt/homebrew/share/vulkan/explicit_layer.d"
+fi
+unset _layer_src _layer_dir

@@ -48,9 +48,11 @@ No BIOS image is needed or shipped. The GBA BIOS is copyrighted, so
 `src/core/bios.inc` implements the SWI calls directly (Div, Sqrt, CpuSet,
 CpuFastSet, Halt) and `hleBoot` sets up the registers the BIOS would have left.
 
-`env.sh` sets `VK_DRIVER_FILES`, `VK_LAYER_PATH` and `DYLD_LIBRARY_PATH`.
-All three are needed on a Homebrew Vulkan install; without them you get
-"Found no drivers!" or `VK_ERROR_LAYER_NOT_PRESENT`.
+`env.sh` sets `VK_DRIVER_FILES` and `VK_LAYER_PATH`, and writes a patched copy
+of the validation-layer manifest with an absolute library path. All of that is
+needed on a Homebrew Vulkan install; without it you get "Found no drivers!" or
+`VK_ERROR_LAYER_NOT_PRESENT`. See `docs/device-limits.md` for why, including
+the macOS SIP behaviour that makes `DYLD_LIBRARY_PATH` useless inside scripts.
 
 ## Design in one paragraph
 

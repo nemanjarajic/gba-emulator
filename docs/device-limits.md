@@ -47,11 +47,21 @@ OAM 1K + I/O 1K + save 128K). ROM and BIOS are shared and excluded.
    `share/vulkan/icd.d/` the loader searches. Without `VK_DRIVER_FILES` the
    loader reports "Found no drivers!" despite a correct install.
 2. The Homebrew validation-layer manifest names its library relatively, so
-   dyld cannot find it. Without `DYLD_LIBRARY_PATH=/opt/homebrew/lib`,
-   `vkCreateInstance` fails with `VK_ERROR_LAYER_NOT_PRESENT` even though the
-   loader successfully locates and parses the manifest.
+   dyld cannot find it. `vkCreateInstance` then fails with
+   `VK_ERROR_LAYER_NOT_PRESENT` even though the loader successfully locates and
+   parses the manifest.
 
-Both are handled by `source env.sh`.
+3. The obvious fix for (2), `DYLD_LIBRARY_PATH=/opt/homebrew/lib`, **does not
+   survive a shell script.** macOS System Integrity Protection strips every
+   `DYLD_*` variable when it launches a protected binary, and `/bin/sh` is
+   protected. The symptom is confusing: every Vulkan program works when run
+   straight from the terminal and fails from inside a wrapper script, with no
+   message explaining why. `tools/run_gates.sh` hit exactly this.
+
+All three are handled by `source env.sh`, which sidesteps (2) and (3) together
+by writing a patched copy of the layer manifest under `build/vulkan/` with an
+absolute `library_path`, so no `DYLD_*` variable is needed at all. Verify with
+`env -u DYLD_LIBRARY_PATH ./build/m0_square`.
 
 ## Cross-platform notes (macOS + Windows/NVIDIA)
 
