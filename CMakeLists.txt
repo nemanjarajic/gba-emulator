@@ -131,6 +131,23 @@ target_link_libraries(gba_env PRIVATE gba_host gba_vk)
 target_compile_options(gba_env PRIVATE ${GBA_WARNINGS})
 set_target_properties(gba_env PROPERTIES CXX_VISIBILITY_PRESET hidden)
 
+# Installing exports just the embedding interface: the shared library and its
+# header. Everything else in this repository is the emulator's own business.
+include(GNUInstallDirs)
+install(TARGETS gba_env
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(FILES src/api/gba_env.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY ${SHADER_DIR}/ DESTINATION ${CMAKE_INSTALL_DATADIR}/gba_env/shaders
+        FILES_MATCHING PATTERN "*.spv")
+
+# Tests the C ABI from this repository, since its bindings live elsewhere.
+add_executable(api_test src/app/api_test.cpp)
+target_link_libraries(api_test PRIVATE gba_env)
+target_include_directories(api_test PRIVATE src)
+target_compile_options(api_test PRIVATE ${GBA_WARNINGS})
+
 # Interactive player and debugger. Optional: only built if SDL3 is present.
 find_package(SDL3 QUIET)
 if(SDL3_FOUND)

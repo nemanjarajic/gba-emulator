@@ -46,6 +46,8 @@ struct GbaEnv {
 
 extern "C" {
 
+uint32_t gba_env_abi_version(void) { return GBA_ENV_ABI_VERSION; }
+
 const char* gba_env_last_error(void) { return g_error.c_str(); }
 uint32_t gba_env_obs_width(void) { return OBS_W; }
 uint32_t gba_env_obs_height(void) { return OBS_H; }

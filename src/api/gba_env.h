@@ -22,6 +22,14 @@
 extern "C" {
 #endif
 
+// The library and its bindings are versioned separately once they live in
+// different repositories, so a caller must be able to tell whether the shared
+// library it loaded speaks the interface it was built against. Bump this
+// whenever anything in this header changes shape.
+#define GBA_ENV_ABI_VERSION 1
+
+GBA_ENV_API uint32_t gba_env_abi_version(void);
+
 typedef struct GbaEnv GbaEnv;
 
 // Creation flags.

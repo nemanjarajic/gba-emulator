@@ -76,6 +76,12 @@ per-instance actions, observations, RAM probes for reward signals, and
 per-instance episode reset. No model lives there -- it is the environment only.
 See `rl/README.md`.
 
+It talks to the emulator only through the C ABI in `src/api/gba_env.h`, which is
+versioned, so it is meant to be movable into a repository of its own; see
+`rl/SPLITTING.md`. This repository tests that interface itself with
+`build/api_test`, so a break is caught here whether or not the bindings are
+present.
+
 ## Running many instances
 
 ```sh

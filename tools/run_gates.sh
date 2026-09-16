@@ -38,6 +38,8 @@ done
 python3 tools/make_bench_roms.py >/dev/null
 run M9 ./build/m9_harness build/roms/input_echo.gba 1024 12
 
+run C-API ./build/api_test build/roms/input_echo.gba
+
 # The Python RL bindings, if the virtual environment has been created.
 if [ -x rl/.venv/bin/python ]; then
     printf '%-12s ' "RL-python"
