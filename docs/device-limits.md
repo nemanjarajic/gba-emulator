@@ -52,3 +52,36 @@ OAM 1K + I/O 1K + save 128K). ROM and BIOS are shared and excluded.
    loader successfully locates and parses the manifest.
 
 Both are handled by `source env.sh`.
+
+## Cross-platform notes (macOS + Windows/NVIDIA)
+
+The project targets both an Apple Silicon Mac via MoltenVK and a Windows machine
+with a discrete NVIDIA GPU. Two places in the Vulkan layer carry that:
+
+- **`createStorageBuffer` tries memory types in preference order** rather than
+  choosing by property flags alone, and falls back on allocation failure:
+  1. `DEVICE_LOCAL | HOST_VISIBLE` — full GPU bandwidth plus a mapped pointer.
+     Free on Apple's unified memory; on a discrete card this is the Resizable
+     BAR window.
+  2. `DEVICE_LOCAL` alone — host access goes through a staging copy. This is
+     where a discrete card lands **without** Resizable BAR, whose host-visible
+     window is only 256 MB, far below what a few thousand instances need.
+  3. `HOST_VISIBLE` alone — last resort.
+
+  The distinction that matters between tiers 1 and 2 is whether the allocation
+  actually *fits*, which the property flags do not express, so the tiers are
+  attempted rather than merely inspected. Call sites use
+  `uploadBuffer`/`downloadBuffer`/`fillBuffer` and are identical on both paths;
+  `m4_gpu_test` prints which one is in use.
+
+- **`VK_KHR_portability_enumeration` is queried before being enabled.** MoltenVK
+  needs it and the matching instance-create flag, or `vkEnumeratePhysicalDevices`
+  returns nothing on macOS. It is loader-provided, so a current Windows loader
+  offers it too, but an older one does not and requesting it unconditionally
+  would fail instance creation.
+
+Nothing in `src/core/` is platform-dependent, and NVIDIA's warp size is 32,
+matching Apple's SIMD group width, so the divergence model carries over intact.
+
+Still macOS-only: `-Wall -Wextra` in CMake (fine for clang-cl/MinGW, not MSVC)
+and the `tools/*.sh` scripts (need Git Bash or WSL).

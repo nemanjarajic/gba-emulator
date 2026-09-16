@@ -22,6 +22,9 @@
 //   - no default arguments, no overloading
 //   - integer literals always carry a 'u' suffix; `1 << 31` is UB in both
 //     languages, `1u << 31` is defined in both
+//   - no static_assert: there is no GLSL equivalent, and a macro that expands
+//     to nothing leaves a stray semicolon that GLSL rejects at file scope.
+//     Put assertions about the shared types in a `#ifndef GBA_GLSL` block.
 
 #ifdef GBA_GLSL
 
@@ -31,7 +34,6 @@
 #define OUT(T) out T
 #define CORE_FN
 #define KCONST const
-#define STATIC_ASSERT(cond, msg)
 
 #else  // ---- C++ ----
 
@@ -43,7 +45,6 @@
 #define OUT(T) T&
 #define CORE_FN inline
 #define KCONST constexpr
-#define STATIC_ASSERT(cond, msg) static_assert(cond, msg)
 
 #endif
 

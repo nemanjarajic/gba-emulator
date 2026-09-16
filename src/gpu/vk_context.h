@@ -18,6 +18,8 @@ namespace gba {
 void vkCheckImpl(VkResult r, const char* expr, const char* file, int line);
 #define VK_CHECK(expr) ::gba::vkCheckImpl((expr), #expr, __FILE__, __LINE__)
 
+struct Buffer;
+
 struct VkContext {
     VkInstance instance = VK_NULL_HANDLE;
     VkPhysicalDevice phys = VK_NULL_HANDLE;
@@ -26,6 +28,9 @@ struct VkContext {
     uint32_t queueFamily = 0;
     VkCommandPool cmdPool = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT messenger = VK_NULL_HANDLE;
+
+    // Staging buffer, grown on demand, used only when a Buffer is not mappable.
+    Buffer* staging = nullptr;
 
     VkPhysicalDeviceProperties props{};
     VkPhysicalDeviceMemoryProperties memProps{};
@@ -36,19 +41,31 @@ struct VkContext {
     void destroy();
 };
 
-// Host-visible, host-coherent storage buffer. On Apple Silicon memory is
-// unified, so there is no staging-buffer step: the mapped pointer and the GPU
-// view are the same physical memory. This is a real simplification the design
-// leans on -- uploading a ROM or reading back 4096 framebuffers is a memcpy.
+// A device-local storage buffer, mapped directly when the driver allows it.
+//
+// `mapped` is non-null when the allocation landed in a memory type that is both
+// DEVICE_LOCAL and HOST_VISIBLE -- always the case on Apple Silicon's unified
+// memory, and on a discrete GPU when Resizable BAR is enabled. Otherwise the
+// buffer is GPU-only and host access goes through a staging copy.
+//
+// Always read and write through uploadBuffer/downloadBuffer/fillBuffer rather
+// than touching `mapped`: they take the fast path automatically where it
+// exists, so call sites stay identical on both platforms.
 struct Buffer {
     VkBuffer buf = VK_NULL_HANDLE;
     VkDeviceMemory mem = VK_NULL_HANDLE;
     VkDeviceSize size = 0;
-    void* mapped = nullptr;
+    void* mapped = nullptr;  // null => needs staging
 };
 
 Buffer createStorageBuffer(VkContext& ctx, VkDeviceSize size);
 void destroyBuffer(VkContext& ctx, Buffer& b);
+
+void uploadBuffer(VkContext& ctx, Buffer& dst, const void* src, VkDeviceSize bytes,
+                  VkDeviceSize dstOffset = 0);
+void downloadBuffer(VkContext& ctx, Buffer& src, void* dst, VkDeviceSize bytes,
+                    VkDeviceSize srcOffset = 0);
+void fillBuffer(VkContext& ctx, Buffer& dst, uint32_t value);
 
 // A compute pipeline over `numBuffers` std430 storage buffers bound at
 // consecutive bindings 0..numBuffers-1, plus an optional push-constant block.

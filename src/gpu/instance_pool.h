@@ -22,13 +22,17 @@ struct CorePush {
 
 struct InstancePool {
     uint32_t numInstances = 0;
-    Buffer bios, rom, ewram, iwram, vram, pram, oam, io, sram, fb;
+    Buffer bios, rom, ewram, iwram, vram, pram, oam, io, sram, fb, state;
 
     void create(VkContext& ctx, uint32_t instances, uint32_t romWords, bool withFramebuffers);
     void destroy(VkContext& ctx);
 
     // Descriptor binding order; see state.h.
     std::vector<Buffer*> bindings();
+
+    // Writes every instance's starting state, and reads it all back.
+    void uploadStates(VkContext& ctx, const std::vector<GbaState>& states);
+    void downloadStates(VkContext& ctx, std::vector<GbaState>& states);
 
     // Total bytes allocated, for reporting the instance-count budget.
     uint64_t totalBytes() const;

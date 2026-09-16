@@ -26,21 +26,31 @@ void InstancePool::create(VkContext& ctx, uint32_t instances, uint32_t romWords,
     sram = createStorageBuffer(ctx, words(SRAM_WORDS));
     fb = createStorageBuffer(ctx, withFramebuffers ? words(FB_WORDS)
                                                    : VkDeviceSize(instances) * sizeof(uint32_t));
+    state = createStorageBuffer(ctx, VkDeviceSize(instances) * sizeof(GbaState));
 
-    // Zero everything. Host-visible unified memory means this is a plain memset
-    // with no staging buffer or transfer submission.
-    for (Buffer* b : bindings()) std::fill_n(static_cast<uint8_t*>(b->mapped), b->size, uint8_t(0));
+    // Zeroed on the GPU rather than through a mapped pointer, so this works
+    // unchanged when the buffers are device-local and unmappable.
+    for (Buffer* b : bindings()) fillBuffer(ctx, *b, 0u);
     // Save memory powers on erased, not zeroed.
-    std::fill_n(static_cast<uint8_t*>(sram.mapped), sram.size, uint8_t(0xFF));
+    fillBuffer(ctx, sram, 0xFFFFFFFFu);
 }
 
 std::vector<Buffer*> InstancePool::bindings() {
-    return {&bios, &rom, &ewram, &iwram, &vram, &pram, &oam, &io, &sram, &fb};
+    return {&bios, &rom, &ewram, &iwram, &vram, &pram, &oam, &io, &sram, &fb, &state};
+}
+
+void InstancePool::uploadStates(VkContext& ctx, const std::vector<GbaState>& states) {
+    uploadBuffer(ctx, state, states.data(), states.size() * sizeof(GbaState));
+}
+
+void InstancePool::downloadStates(VkContext& ctx, std::vector<GbaState>& states) {
+    states.resize(numInstances);
+    downloadBuffer(ctx, state, states.data(), states.size() * sizeof(GbaState));
 }
 
 uint64_t InstancePool::totalBytes() const {
     return bios.size + rom.size + ewram.size + iwram.size + vram.size + pram.size + oam.size +
-           io.size + sram.size + fb.size;
+           io.size + sram.size + fb.size + state.size;
 }
 
 void InstancePool::destroy(VkContext& ctx) {

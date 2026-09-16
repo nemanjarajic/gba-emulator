@@ -48,6 +48,16 @@ static bool hasLayer(const char* name) {
     return false;
 }
 
+static bool hasInstanceExt(const char* name) {
+    uint32_t n = 0;
+    vkEnumerateInstanceExtensionProperties(nullptr, &n, nullptr);
+    std::vector<VkExtensionProperties> v(n);
+    vkEnumerateInstanceExtensionProperties(nullptr, &n, v.data());
+    for (auto& e : v)
+        if (std::strcmp(e.extensionName, name) == 0) return true;
+    return false;
+}
+
 static bool hasDeviceExt(VkPhysicalDevice p, const char* name) {
     uint32_t n = 0;
     vkEnumerateDeviceExtensionProperties(p, nullptr, &n, nullptr);
@@ -65,13 +75,20 @@ void VkContext::init(bool validation, bool debugPrintf) {
     app.apiVersion = VK_API_VERSION_1_2;
 
     std::vector<const char*> exts{
-        // MoltenVK is a "portability" driver; without this extension plus the
-        // ENUMERATE_PORTABILITY flag below, vkEnumeratePhysicalDevices returns
-        // nothing on macOS and instance creation fails with INCOMPATIBLE_DRIVER.
-        VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME,
         VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
     };
     std::vector<const char*> layers;
+
+    // MoltenVK is a "portability" driver: without this extension and the
+    // matching create flag, vkEnumeratePhysicalDevices returns nothing on macOS
+    // and instance creation fails with INCOMPATIBLE_DRIVER.
+    //
+    // It is loader-provided rather than driver-provided, so a current Windows
+    // loader offers it too -- but an older one does not, and requesting it
+    // unconditionally would fail instance creation on a machine that has no
+    // portability drivers to enumerate in the first place. Hence the query.
+    const bool portability = hasInstanceExt(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+    if (portability) exts.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
 
     if (validation && hasLayer("VK_LAYER_KHRONOS_validation")) {
         layers.push_back("VK_LAYER_KHRONOS_validation");
@@ -90,7 +107,7 @@ void VkContext::init(bool validation, bool debugPrintf) {
     vf.pEnabledValidationFeatures = enables;
 
     VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
-    ici.flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+    ici.flags = portability ? VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR : 0;
     ici.pApplicationInfo = &app;
     ici.enabledExtensionCount = uint32_t(exts.size());
     ici.ppEnabledExtensionNames = exts.data();
@@ -188,6 +205,11 @@ void VkContext::init(bool validation, bool debugPrintf) {
 }
 
 void VkContext::destroy() {
+    if (staging) {
+        destroyBuffer(*this, *staging);
+        delete staging;
+        staging = nullptr;
+    }
     if (cmdPool) vkDestroyCommandPool(device, cmdPool, nullptr);
     if (device) vkDestroyDevice(device, nullptr);
     if (messenger) {
@@ -215,30 +237,160 @@ Buffer createStorageBuffer(VkContext& ctx, VkDeviceSize size) {
     VkMemoryRequirements req{};
     vkGetBufferMemoryRequirements(ctx.device, b.buf, &req);
 
-    // Unified memory: ask for host-visible + coherent, preferring a heap that is
-    // also device-local. On Apple Silicon this is the same physical memory.
-    const VkMemoryPropertyFlags want =
+    // Candidate memory types, best first:
+    //   1. DEVICE_LOCAL + HOST_VISIBLE -- full GPU bandwidth AND a mapped
+    //      pointer. Free on Apple Silicon's unified memory; on a discrete GPU
+    //      this is the Resizable BAR window.
+    //   2. DEVICE_LOCAL alone -- full GPU bandwidth, host access via staging.
+    //      This is where a discrete card without Resizable BAR ends up, since
+    //      its host-visible window is only 256 MB and a large allocation from
+    //      candidate 1 fails outright.
+    //   3. HOST_VISIBLE alone -- last resort.
+    //
+    // Allocation is attempted in order rather than merely choosing by flags,
+    // because the useful distinction between 1 and 2 is whether the allocation
+    // actually fits, which the property flags do not express.
+    const VkMemoryPropertyFlags hostBits =
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    uint32_t index = UINT32_MAX;
-    for (uint32_t i = 0; i < ctx.memProps.memoryTypeCount; ++i) {
-        if (!(req.memoryTypeBits & (1u << i))) continue;
-        const auto flags = ctx.memProps.memoryTypes[i].propertyFlags;
-        if ((flags & want) != want) continue;
-        index = i;
-        if (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) break;  // preferred
-    }
-    if (index == UINT32_MAX) {
-        std::fprintf(stderr, "[vk] no host-visible coherent memory type\n");
-        std::abort();
+    const VkMemoryPropertyFlags tiers[3] = {
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | hostBits,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        hostBits,
+    };
+
+    for (int tier = 0; tier < 3 && b.mem == VK_NULL_HANDLE; ++tier) {
+        for (uint32_t i = 0; i < ctx.memProps.memoryTypeCount; ++i) {
+            if (!(req.memoryTypeBits & (1u << i))) continue;
+            const auto flags = ctx.memProps.memoryTypes[i].propertyFlags;
+            if ((flags & tiers[tier]) != tiers[tier]) continue;
+
+            VkMemoryAllocateInfo mai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+            mai.allocationSize = req.size;
+            mai.memoryTypeIndex = i;
+            if (vkAllocateMemory(ctx.device, &mai, nullptr, &b.mem) != VK_SUCCESS) continue;
+
+            if (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+                VK_CHECK(vkMapMemory(ctx.device, b.mem, 0, VK_WHOLE_SIZE, 0, &b.mapped));
+            break;
+        }
     }
 
-    VkMemoryAllocateInfo mai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-    mai.allocationSize = req.size;
-    mai.memoryTypeIndex = index;
-    VK_CHECK(vkAllocateMemory(ctx.device, &mai, nullptr, &b.mem));
+    if (b.mem == VK_NULL_HANDLE) {
+        std::fprintf(stderr, "[vk] could not allocate %.1f MiB of storage\n",
+                     double(size) / (1024.0 * 1024.0));
+        std::abort();
+    }
     VK_CHECK(vkBindBufferMemory(ctx.device, b.buf, b.mem, 0));
-    VK_CHECK(vkMapMemory(ctx.device, b.mem, 0, VK_WHOLE_SIZE, 0, &b.mapped));
     return b;
+}
+
+// Records a one-shot transfer command buffer and waits for it.
+static void runTransfer(VkContext& ctx, VkBuffer src, VkBuffer dst, VkDeviceSize srcOff,
+                        VkDeviceSize dstOff, VkDeviceSize bytes) {
+    VkCommandBufferAllocateInfo cai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    cai.commandPool = ctx.cmdPool;
+    cai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cai.commandBufferCount = 1;
+    VkCommandBuffer cmd;
+    VK_CHECK(vkAllocateCommandBuffers(ctx.device, &cai, &cmd));
+
+    VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    VK_CHECK(vkBeginCommandBuffer(cmd, &bi));
+    VkBufferCopy region{srcOff, dstOff, bytes};
+    vkCmdCopyBuffer(cmd, src, dst, 1, &region);
+    VK_CHECK(vkEndCommandBuffer(cmd));
+
+    VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    si.commandBufferCount = 1;
+    si.pCommandBuffers = &cmd;
+    VK_CHECK(vkQueueSubmit(ctx.queue, 1, &si, VK_NULL_HANDLE));
+    VK_CHECK(vkQueueWaitIdle(ctx.queue));
+    vkFreeCommandBuffers(ctx.device, ctx.cmdPool, 1, &cmd);
+}
+
+// Grows the shared staging buffer to at least `bytes`.
+static Buffer& ensureStaging(VkContext& ctx, VkDeviceSize bytes) {
+    if (ctx.staging && ctx.staging->size >= bytes) return *ctx.staging;
+    if (ctx.staging) {
+        destroyBuffer(ctx, *ctx.staging);
+        delete ctx.staging;
+    }
+    ctx.staging = new Buffer();
+
+    VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bci.size = bytes;
+    bci.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    bci.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    VK_CHECK(vkCreateBuffer(ctx.device, &bci, nullptr, &ctx.staging->buf));
+    ctx.staging->size = bytes;
+
+    VkMemoryRequirements req{};
+    vkGetBufferMemoryRequirements(ctx.device, ctx.staging->buf, &req);
+    const VkMemoryPropertyFlags want =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    for (uint32_t i = 0; i < ctx.memProps.memoryTypeCount; ++i) {
+        if (!(req.memoryTypeBits & (1u << i))) continue;
+        if ((ctx.memProps.memoryTypes[i].propertyFlags & want) != want) continue;
+        VkMemoryAllocateInfo mai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+        mai.allocationSize = req.size;
+        mai.memoryTypeIndex = i;
+        if (vkAllocateMemory(ctx.device, &mai, nullptr, &ctx.staging->mem) != VK_SUCCESS) continue;
+        break;
+    }
+    if (ctx.staging->mem == VK_NULL_HANDLE) {
+        std::fprintf(stderr, "[vk] no host-visible memory for staging\n");
+        std::abort();
+    }
+    VK_CHECK(vkBindBufferMemory(ctx.device, ctx.staging->buf, ctx.staging->mem, 0));
+    VK_CHECK(vkMapMemory(ctx.device, ctx.staging->mem, 0, VK_WHOLE_SIZE, 0, &ctx.staging->mapped));
+    return *ctx.staging;
+}
+
+void uploadBuffer(VkContext& ctx, Buffer& dst, const void* src, VkDeviceSize bytes,
+                  VkDeviceSize dstOffset) {
+    if (bytes == 0) return;
+    if (dst.mapped) {  // unified memory or Resizable BAR: a plain memcpy
+        std::memcpy(static_cast<uint8_t*>(dst.mapped) + dstOffset, src, bytes);
+        return;
+    }
+    Buffer& stage = ensureStaging(ctx, bytes);
+    std::memcpy(stage.mapped, src, bytes);
+    runTransfer(ctx, stage.buf, dst.buf, 0, dstOffset, bytes);
+}
+
+void downloadBuffer(VkContext& ctx, Buffer& src, void* dst, VkDeviceSize bytes,
+                    VkDeviceSize srcOffset) {
+    if (bytes == 0) return;
+    if (src.mapped) {
+        std::memcpy(dst, static_cast<const uint8_t*>(src.mapped) + srcOffset, bytes);
+        return;
+    }
+    Buffer& stage = ensureStaging(ctx, bytes);
+    runTransfer(ctx, src.buf, stage.buf, srcOffset, 0, bytes);
+    std::memcpy(dst, stage.mapped, bytes);
+}
+
+void fillBuffer(VkContext& ctx, Buffer& dst, uint32_t value) {
+    // vkCmdFillBuffer works regardless of host visibility, so zeroing a pool
+    // needs no special case for the staging path.
+    VkCommandBufferAllocateInfo cai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    cai.commandPool = ctx.cmdPool;
+    cai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cai.commandBufferCount = 1;
+    VkCommandBuffer cmd;
+    VK_CHECK(vkAllocateCommandBuffers(ctx.device, &cai, &cmd));
+    VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    VK_CHECK(vkBeginCommandBuffer(cmd, &bi));
+    vkCmdFillBuffer(cmd, dst.buf, 0, VK_WHOLE_SIZE, value);
+    VK_CHECK(vkEndCommandBuffer(cmd));
+    VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    si.commandBufferCount = 1;
+    si.pCommandBuffers = &cmd;
+    VK_CHECK(vkQueueSubmit(ctx.queue, 1, &si, VK_NULL_HANDLE));
+    VK_CHECK(vkQueueWaitIdle(ctx.queue));
+    vkFreeCommandBuffers(ctx.device, ctx.cmdPool, 1, &cmd);
 }
 
 void destroyBuffer(VkContext& ctx, Buffer& b) {

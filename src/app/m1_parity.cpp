@@ -47,10 +47,13 @@ int main() {
     InstancePool pool;
     pool.create(ctx, kInstances, kRomWords, /*withFramebuffers=*/true);
 
-    auto* gpuRom = static_cast<uint32_t*>(pool.rom.mapped);
-    for (uint32_t i = 0; i < kRomWords; ++i) gpuRom[i] = romWord(i);
-    auto* gpuBios = static_cast<uint32_t*>(pool.bios.mapped);
-    for (uint32_t i = 0; i < BIOS_WORDS; ++i) gpuBios[i] = biosWord(i);
+    std::vector<uint32_t> romImage(kRomWords);
+    for (uint32_t i = 0; i < kRomWords; ++i) romImage[i] = romWord(i);
+    uploadBuffer(ctx, pool.rom, romImage.data(), romImage.size() * 4);
+
+    std::vector<uint32_t> biosImage(BIOS_WORDS);
+    for (uint32_t i = 0; i < BIOS_WORDS; ++i) biosImage[i] = biosWord(i);
+    uploadBuffer(ctx, pool.bios, biosImage.data(), biosImage.size() * 4);
 
     ComputePipeline pipe;
     pipe.create(ctx, std::string(SHADER_DIR) + "/core_compile_test.spv",
@@ -60,9 +63,10 @@ int main() {
     CorePush push{kInstances, kRomWords, 0, 0};
     dispatchBlocking(ctx, pipe, (kInstances + kLocalSize - 1) / kLocalSize, &push, sizeof(push));
 
-    const auto* gpuFb = static_cast<const uint32_t*>(pool.fb.mapped);
+    std::vector<uint32_t> fbImage(size_t(kInstances) * FB_WORDS);
+    downloadBuffer(ctx, pool.fb, fbImage.data(), fbImage.size() * 4);
     std::vector<uint32_t> gpuResult(kInstances);
-    for (uint32_t i = 0; i < kInstances; ++i) gpuResult[i] = gpuFb[size_t(i) * FB_WORDS];
+    for (uint32_t i = 0; i < kInstances; ++i) gpuResult[i] = fbImage[size_t(i) * FB_WORDS];
 
     std::printf("GPU: %u instances, %.1f MiB of state\n", kInstances,
                 double(pool.totalBytes()) / (1024.0 * 1024.0));

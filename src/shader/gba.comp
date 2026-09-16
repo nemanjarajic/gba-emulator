@@ -1,0 +1,29 @@
+#version 450
+
+// The GBA core, one emulated console per invocation.
+//
+// A dispatch runs a bounded number of cycles rather than a whole frame: macOS
+// kills a command buffer that runs too long, and bounding the work also keeps
+// the host in control of scheduling. State lives in a storage buffer between
+// dispatches, so a run is simply a sequence of these.
+//
+// Loading the state struct into a local at entry and storing it once at exit is
+// deliberate: it lets the compiler keep the register file in shader registers
+// for the whole dispatch instead of round-tripping to memory per instruction.
+
+#include "core.h"
+#include "core.inc"
+
+layout(local_size_x = 64) in;
+
+void main() {
+    uint inst = gl_GlobalInvocationID.x;
+    if (inst >= g_num_instances) return;
+
+    GbaState st = g_state[inst];
+    st.inst = inst;  // authoritative: the buffer's copy is never trusted
+
+    step_cycles(st, g_cycles);
+
+    g_state[inst] = st;
+}

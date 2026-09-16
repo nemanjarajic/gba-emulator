@@ -5,7 +5,10 @@ compute shader** — ARM7TDMI CPU, memory bus, PPU, DMA, timers and interrupts �
 with one GPU invocation per emulated console, so thousands of independent GBA
 instances run at once.
 
-Built on an Apple M4 via MoltenVK. Priority is learning, so the code favours
+Targets macOS (Apple Silicon via MoltenVK) and Windows with an NVIDIA GPU.
+Buffer allocation tries memory types in preference order and falls back to a
+staging path, so it does not depend on unified memory; macOS-only Vulkan
+extensions are queried before use. Priority is learning, so the code favours
 legibility and visible incremental milestones over maximum compatibility.
 
 ## What this is and is not
@@ -29,7 +32,12 @@ cmake --build build
 ./build/m1_membus      # M1 gate: memory bus behaviour (CPU)
 ./build/m1_parity      # M1 gate: CPU and GPU builds agree
 ./tools/run_cpu_tests.sh   # M2/M3 gate: jsmolka CPU test ROMs
+./build/m4_gpu_test        # M4 gate: same ROM inside the compute shader
 ```
+
+`m4_gpu_test <rom> <instances>` also reports throughput. See
+`docs/performance.md` for the scaling curve: ~21x one CPU core at 4096
+instances, saturating at 8192.
 
 Test ROMs are not vendored; run `./tools/fetch_test_roms.sh` once to clone
 `jsmolka/gba-tests` into `third_party/`.
@@ -66,7 +74,7 @@ They were implemented and gated together.
 | M1 | Core scaffold, memory map, dual-compile proven | **done** |
 | M2 | ARM interpreter — passes `arm.gba` | **done** |
 | M3 | Thumb interpreter — passes `thumb.gba`, `memory.gba` | **done** |
-| M4 | Same core on GPU, lockstep-verified against CPU | |
+| M4 | Same core on GPU, verified against CPU | **done** |
 | M5 | PPU bitmap modes — first pixels | |
 | M6 | Tiled modes and sprites | |
 | M7 | DMA, timers, interrupts, input | |

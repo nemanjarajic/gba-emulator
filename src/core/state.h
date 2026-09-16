@@ -75,6 +75,14 @@ layout(std430, binding = 7) buffer IoBuf    { uint g_io[];    };
 layout(std430, binding = 8) buffer SramBuf  { uint g_sram[];  };
 layout(std430, binding = 9) buffer FbBuf    { uint g_fb[];    };
 
+// Per-instance machine state, persisting across dispatches. This is what makes
+// the GPU core resumable: a dispatch loads its instance's state into shader
+// locals, runs a bounded number of cycles, and stores it back.
+//
+// Declared for the shader only. The C++ reference core passes a GbaState by
+// reference instead, since it runs one machine at a time.
+layout(std430, binding = 10) buffer StateBuf { GbaState g_state[]; };
+
 layout(push_constant) uniform PushBlock {
     uint g_num_instances;
     uint g_rom_words;   // ROM length in words; reads past it return open bus
@@ -83,6 +91,7 @@ layout(push_constant) uniform PushBlock {
 } pc;
 #define g_num_instances pc.g_num_instances
 #define g_rom_words     pc.g_rom_words
+#define g_cycles        pc.g_cycles
 
 #else  // ---- C++ ----
 
@@ -113,5 +122,13 @@ extern U32 g_rom_words;
 // so lanes hit consecutive words and coalesce. Every memory access in the
 // emulator goes through this macro precisely so that is a one-line change.
 #define MEM_IDX(words_per_inst, inst, w) ((inst) * (words_per_inst) + (w))
+
+#ifndef GBA_GLSL
+// GbaState is copied verbatim between host memory and a std430 storage buffer,
+// so its C++ layout must match what GLSL sees. Every member being a U32 or an
+// array of U32 makes that true (std430 gives both a 4-byte stride); this
+// catches a member of any other type being added later.
+static_assert(sizeof(GbaState) == 52u * 4u, "GbaState must stay std430-compatible");
+#endif
 
 #endif  // GBA_CORE_STATE_H

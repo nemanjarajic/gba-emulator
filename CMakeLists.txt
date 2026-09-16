@@ -51,6 +51,7 @@ endfunction()
 
 add_compute_shader(src/shader/square.comp)
 add_compute_shader(src/shader/core_compile_test.comp)
+add_compute_shader(src/shader/gba.comp)
 
 add_custom_target(shaders ALL DEPENDS ${SHADER_OUTPUTS})
 
@@ -79,6 +80,12 @@ target_compile_options(m1_membus PRIVATE -Wall -Wextra)
 add_executable(cpu_test src/app/cpu_test.cpp)
 target_link_libraries(cpu_test PRIVATE gba_host)
 target_compile_options(cpu_test PRIVATE -Wall -Wextra)
+
+# Runs a full test ROM inside the compute shader and diffs against the CPU.
+add_executable(m4_gpu_test src/app/m4_gpu_test.cpp)
+target_link_libraries(m4_gpu_test PRIVATE gba_host gba_vk)
+add_dependencies(m4_gpu_test shaders)
+target_compile_options(m4_gpu_test PRIVATE -Wall -Wextra)
 
 # Runs the same core source on both targets and diffs the results.
 add_executable(m1_parity src/app/m1_parity.cpp)
