@@ -178,6 +178,8 @@ void VkContext::init(bool validation, bool debugPrintf) {
 
     vkGetPhysicalDeviceProperties(phys, &props);
     vkGetPhysicalDeviceMemoryProperties(phys, &memProps);
+    unifiedMemory = props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU ||
+                    props.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU;
 
     VkPhysicalDeviceSubgroupProperties sub{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES};
     VkPhysicalDeviceProperties2 p2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
@@ -358,16 +360,29 @@ static Buffer& ensureStaging(VkContext& ctx, VkDeviceSize bytes) {
 
     VkMemoryRequirements req{};
     vkGetBufferMemoryRequirements(ctx.device, ctx.staging->buf, &req);
-    const VkMemoryPropertyFlags want =
+    // Staging should be ordinary host RAM. With Resizable BAR on, a
+    // DEVICE_LOCAL + HOST_VISIBLE type is also on offer, and a staging buffer
+    // placed there would be read back over PCIe -- the very thing staging is
+    // for avoiding. So prefer cached system memory, and take anything
+    // host-visible only as a last resort.
+    const VkMemoryPropertyFlags hostBits =
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    for (uint32_t i = 0; i < ctx.memProps.memoryTypeCount; ++i) {
-        if (!(req.memoryTypeBits & (1u << i))) continue;
-        if ((ctx.memProps.memoryTypes[i].propertyFlags & want) != want) continue;
-        VkMemoryAllocateInfo mai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-        mai.allocationSize = req.size;
-        mai.memoryTypeIndex = i;
-        if (vkAllocateMemory(ctx.device, &mai, nullptr, &ctx.staging->mem) != VK_SUCCESS) continue;
-        break;
+    for (int tier = 0; tier < 3 && ctx.staging->mem == VK_NULL_HANDLE; ++tier) {
+        for (uint32_t i = 0; i < ctx.memProps.memoryTypeCount; ++i) {
+            if (!(req.memoryTypeBits & (1u << i))) continue;
+            const auto flags = ctx.memProps.memoryTypes[i].propertyFlags;
+            if ((flags & hostBits) != hostBits) continue;
+            const bool local = flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            const bool cached = flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+            if (tier == 0 && (local || !cached)) continue;
+            if (tier == 1 && local) continue;
+            VkMemoryAllocateInfo mai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+            mai.allocationSize = req.size;
+            mai.memoryTypeIndex = i;
+            if (vkAllocateMemory(ctx.device, &mai, nullptr, &ctx.staging->mem) != VK_SUCCESS)
+                continue;
+            break;
+        }
     }
     if (ctx.staging->mem == VK_NULL_HANDLE) {
         std::fprintf(stderr, "[vk] no host-visible memory for staging\n");
@@ -393,7 +408,13 @@ void uploadBuffer(VkContext& ctx, Buffer& dst, const void* src, VkDeviceSize byt
 void downloadBuffer(VkContext& ctx, Buffer& src, void* dst, VkDeviceSize bytes,
                     VkDeviceSize srcOffset) {
     if (bytes == 0) return;
-    if (src.mapped) {
+    // Reading a mapping directly is free on unified memory. On a discrete GPU
+    // the mapping is the Resizable BAR window, and a bulk read through it
+    // crawls: 9216 observations (21 MiB) took 1.7 s a frame on an RTX 5060 Ti.
+    // A GPU-side copy into host RAM followed by a memcpy is far faster, but
+    // costs a submission, so small reads still go straight through.
+    constexpr VkDeviceSize kDirectReadLimit = 64 * 1024;
+    if (src.mapped && (ctx.unifiedMemory || bytes <= kDirectReadLimit)) {
         std::memcpy(dst, static_cast<const uint8_t*>(src.mapped) + srcOffset, bytes);
         return;
     }

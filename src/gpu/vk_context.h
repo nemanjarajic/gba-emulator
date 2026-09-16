@@ -36,6 +36,9 @@ struct VkContext {
     VkPhysicalDeviceMemoryProperties memProps{};
     uint32_t subgroupSize = 0;
     bool validationEnabled = false;
+    // Host and GPU share physical memory (Apple Silicon, integrated GPUs). When
+    // false, a mapped buffer is a PCIe window and reading it directly is slow.
+    bool unifiedMemory = false;
 
     void init(bool validation, bool debugPrintf);
     void destroy();
