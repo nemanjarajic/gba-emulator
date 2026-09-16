@@ -39,6 +39,11 @@ find_program(GLSLC glslc HINTS "${HOMEBREW_PREFIX}/bin" REQUIRED)
 # debugPrintfEXT output point at real line numbers.
 set(SHADER_DIR "${CMAKE_BINARY_DIR}/shaders")
 file(MAKE_DIRECTORY "${SHADER_DIR}")
+
+# Where the gates and tools write the images they produce. Under the build
+# directory so a clean checkout stays clean and `rm -rf build` takes them.
+set(OUTPUT_DIR "${CMAKE_BINARY_DIR}/out")
+file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 set(SHADER_OUTPUTS "")
 
 function(add_compute_shader SRC)
@@ -78,6 +83,7 @@ add_library(gba_vk STATIC src/gpu/vk_context.cpp src/gpu/instance_pool.cpp)
 target_include_directories(gba_vk PUBLIC src)
 target_link_libraries(gba_vk PUBLIC Vulkan::Vulkan)
 target_compile_definitions(gba_vk PUBLIC SHADER_DIR="${SHADER_DIR}")
+target_compile_definitions(gba_host PUBLIC OUTPUT_DIR="${OUTPUT_DIR}")
 # Vulkan's designated-initialiser style trips -Wmissing-field-initializers.
 target_compile_options(gba_vk PRIVATE ${GBA_WARNINGS} $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-missing-field-initializers>)
 

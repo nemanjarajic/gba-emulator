@@ -53,7 +53,8 @@ int main(int argc, char** argv) {
     }
     const std::string romPath = argv[1];
     const uint32_t frames = argc > 2 ? uint32_t(std::atoi(argv[2])) : 4;
-    const std::string outPath = argc > 3 ? argv[3] : "frame.png";
+    const std::string outPath =
+        argc > 3 ? argv[3] : (std::string(OUTPUT_DIR) + "/frame.png");
 
     std::vector<uint32_t> rom;
     if (!host::loadBinary(romPath, rom)) {

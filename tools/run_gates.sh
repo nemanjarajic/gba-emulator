@@ -28,7 +28,7 @@ run M6-coverage ./build/m6_coverage
 printf '%-12s\n' "M6-roms"
 for r in stripes shades hello; do
     printf '    %-10s ' "$r"
-    if ./build/render_rom "third_party/gba-tests/ppu/$r.gba" 4 "ppu_$r.png" >/dev/null 2>&1; then
+    if ./build/render_rom "third_party/gba-tests/ppu/$r.gba" 4 "build/out/ppu_$r.png" >/dev/null 2>&1; then
         echo "rendered, CPU/GPU identical"
     else
         echo "FAILED"; fail=1

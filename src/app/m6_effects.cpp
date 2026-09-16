@@ -82,7 +82,7 @@ int main() {
         check(pixelAt(r.cpuFb, 119, 80) == kRed, "WIN0 right edge includes x2-1");
         check(pixelAt(r.cpuFb, 120, 80) == kGreen, "WIN0 right edge excludes x2");
         checkParity(r, "window scene matches on the GPU");
-        host::writePng("fx_window.png", host::bgr555ToRgb(r.gpuFb, SCREEN_W, SCREEN_H), SCREEN_W,
+        host::writePng(std::string(OUTPUT_DIR) + "/fx_window.png", host::bgr555ToRgb(r.gpuFb, SCREEN_W, SCREEN_H), SCREEN_W,
                        SCREEN_H);
     }
 
@@ -150,7 +150,7 @@ int main() {
                               FB_WORDS);
         check(diff == 0, "affine sprite with an identity matrix matches a plain one");
         checkParity(ra, "affine sprite scene matches on the GPU");
-        host::writePng("fx_affine.png", host::bgr555ToRgb(ra.gpuFb, SCREEN_W, SCREEN_H), SCREEN_W,
+        host::writePng(std::string(OUTPUT_DIR) + "/fx_affine.png", host::bgr555ToRgb(ra.gpuFb, SCREEN_W, SCREEN_H), SCREEN_W,
                        SCREEN_H);
     }
 
@@ -189,7 +189,7 @@ int main() {
         checkParity(r, wrap ? "affine BG wrap scene matches on the GPU"
                             : "affine BG no-wrap scene matches on the GPU");
         if (!wrap)
-            host::writePng("fx_affine_bg.png", host::bgr555ToRgb(r.gpuFb, SCREEN_W, SCREEN_H),
+            host::writePng(std::string(OUTPUT_DIR) + "/fx_affine_bg.png", host::bgr555ToRgb(r.gpuFb, SCREEN_W, SCREEN_H),
                            SCREEN_W, SCREEN_H);
     }
 

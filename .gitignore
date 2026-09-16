@@ -1,17 +1,9 @@
 build/
 roms/
 *.spv
-*.png
 compile_commands.json
 .DS_Store
 third_party/gba-tests/
-emerald*.png
-ppu_*.png
-sprites.png
-fx_*.png
-frame.png
-t.png
-e.png
 build/roms/
 __pycache__/
 *.pyc

@@ -239,7 +239,7 @@ void runMode(uint32_t mode, const std::vector<uint32_t>& rom) {
         if (countDifferences(gpuFb, readFramebuffer(ctx, pool, i)) != 0) ++divergentInstances;
     check(divergentInstances == 0, "all instances rendered identically");
 
-    const std::string path = "mode" + std::to_string(mode) + ".png";
+    const std::string path = std::string(OUTPUT_DIR) + "/mode" + std::to_string(mode) + ".png";
     check(host::writePng(path, host::bgr555ToRgb(gpuFb, SCREEN_W, SCREEN_H), SCREEN_W, SCREEN_H),
           "wrote the GPU framebuffer as a PNG");
 

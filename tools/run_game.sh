@@ -5,4 +5,4 @@
 # per-frame report of DISPCNT, the interrupt state and the PC.
 set -e
 cd "$(dirname "$0")/.."
-exec ./build/render_rom "$1" "${2:-190}" "${3:-frame.png}"
+exec ./build/render_rom "$1" "${2:-190}" "${3:-build/out/frame.png}"

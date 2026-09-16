@@ -204,7 +204,7 @@ int main() {
     if (diff) std::printf("    %zu/%u framebuffer words differ\n", diff, FB_WORDS);
     check(diff == 0, "GPU framebuffer matches the CPU reference");
 
-    check(host::writePng("sprites.png", host::bgr555ToRgb(gpuFb, SCREEN_W, SCREEN_H), SCREEN_W,
+    check(host::writePng(std::string(OUTPUT_DIR) + "/sprites.png", host::bgr555ToRgb(gpuFb, SCREEN_W, SCREEN_H), SCREEN_W,
                          SCREEN_H),
           "wrote sprites.png");
 

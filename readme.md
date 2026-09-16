@@ -33,7 +33,7 @@ cmake --build build
 ./build/m1_parity      # M1 gate: CPU and GPU builds agree
 ./tools/run_cpu_tests.sh   # M2/M3 gate: jsmolka CPU test ROMs
 ./build/m4_gpu_test        # M4 gate: same ROM inside the compute shader
-./build/m5_ppu             # M5 gate: bitmap modes, writes mode{3,4,5}.png
+./build/m5_ppu             # M5 gate: bitmap modes
 ./build/m6_sprites         # M6 gate: sprite flips, sizes, bounds
 ./build/m6_effects         # M6 gate: priority, windows, blending, affine
 ./build/m6_coverage        # M6 gate: 8bpp, big maps, sprite sizes, mosaic, obj window
@@ -145,6 +145,9 @@ does nothing forever if it cannot identify a save chip.
 instructions), `WATCH=<addr>` (report every instruction that changes a word),
 `TRACEPC=<addr>` (dump registers through a code range) and `HIST=1` (a profile
 of which ROM regions the game actually executes).
+
+Images the gates produce go to `build/out/`, so a checkout stays clean and
+`rm -rf build` removes them.
 
 ## Other GPUs
 
