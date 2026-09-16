@@ -69,18 +69,22 @@ same ROM on both builds in lockstep and the first register mismatch names the
 exact broken opcode. Debugging a shader-resident ARM7TDMI without that oracle
 is not realistic.
 
-## Reinforcement learning
+## Embedding
 
-`rl/` holds a Python package wrapping the emulator as a vectorised environment:
-per-instance actions, observations, RAM probes for reward signals, and
-per-instance episode reset. No model lives there -- it is the environment only.
-See `rl/README.md`.
+`src/api/gba_env.h` is a C ABI that presents the emulator as a vectorised
+environment: per-instance actions, downsampled observations, RAM probes for
+reward signals, and per-instance episode reset. `libgba_env` is what an
+embedder links against, and `cmake --install` exports it with its header and
+the compiled shaders.
 
-It talks to the emulator only through the C ABI in `src/api/gba_env.h`, which is
-versioned, so it is meant to be movable into a repository of its own; see
-`rl/SPLITTING.md`. This repository tests that interface itself with
-`build/api_test`, so a break is caught here whether or not the bindings are
-present.
+The interface is versioned. `gba_env_abi_version()` lets a caller refuse a
+library that does not match what it was built against, rather than crashing or
+reading wrong data. `build/api_test` exercises the whole ABI, so a change to
+the header is caught here rather than by whoever loads the library next.
+
+The Python bindings that use it are a separate repository, `gba-rl`, which
+finds this one through `GBA_ENV_LIB`, `GBA_EMULATOR_ROOT`, or simply by sitting
+beside it.
 
 ## Running many instances
 
