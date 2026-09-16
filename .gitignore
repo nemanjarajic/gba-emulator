@@ -14,3 +14,5 @@ t.png
 e.png
 build/roms/
 rl/.venv/
+__pycache__/
+*.pyc
