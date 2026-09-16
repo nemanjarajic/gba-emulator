@@ -88,6 +88,29 @@ inputs are read back from inside the emulated machine, instance 0's observation
 is compared byte for byte against the CPU reference, and a snapshot followed by
 a replay of the same inputs must reproduce the same observation exactly.
 
+## Playing a game
+
+```sh
+brew install sdl3            # optional; the debugger is only built if present
+./build/debugger "<rom>.gba"
+```
+
+An SDL window with the screen at 3x, and beside it the register file, live
+disassembly around the PC, a memory view and breakpoints. Space runs and
+pauses, `n` steps an instruction, `f` steps a frame, `b` toggles a breakpoint at
+the PC, `m` cycles the memory view, F5 and F9 save and restore state. Buttons
+are Z and X, enter and right-shift, the arrow keys, and Q and W for the
+shoulders.
+
+`--png out.png --frames N` renders the whole interface to a file without
+opening a window, which is how its layout is checked.
+
+**The debugger runs on the CPU core, not the GPU, and that is not a
+compromise.** One instance on the GPU manages 0.33 MHz against the 16.78 MHz a
+GBA needs; the CPU core does 96 Mcycle/s, about six times real time. The GPU
+path exists to run thousands of machines at once and cannot run one of them at
+playable speed.
+
 ## Running a commercial game
 
 ```sh

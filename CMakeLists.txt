@@ -65,7 +65,7 @@ add_custom_target(shaders ALL DEPENDS ${SHADER_OUTPUTS})
 
 # --- library -----------------------------------------------------------------
 # Host-side backing store for the dual-compiled core (C++ build of src/core/).
-add_library(gba_host STATIC src/host/memory.cpp src/host/png.cpp)
+add_library(gba_host STATIC src/host/memory.cpp src/host/png.cpp src/host/disasm.cpp)
 target_include_directories(gba_host PUBLIC src)
 target_compile_options(gba_host PRIVATE ${GBA_WARNINGS})
 
@@ -119,6 +119,16 @@ target_compile_options(m6_effects PRIVATE ${GBA_WARNINGS})
 add_executable(m7_io src/app/m7_io.cpp)
 target_link_libraries(m7_io PRIVATE gba_host)
 target_compile_options(m7_io PRIVATE ${GBA_WARNINGS})
+
+# Interactive player and debugger. Optional: only built if SDL3 is present.
+find_package(SDL3 QUIET)
+if(SDL3_FOUND)
+  add_executable(debugger src/app/debugger.cpp)
+  target_link_libraries(debugger PRIVATE gba_host SDL3::SDL3)
+  target_compile_options(debugger PRIVATE ${GBA_WARNINGS})
+else()
+  message(STATUS "SDL3 not found: skipping the debugger target")
+endif()
 
 add_executable(gpu_check src/app/gpu_check.cpp)
 target_link_libraries(gpu_check PRIVATE gba_host gba_vk)
