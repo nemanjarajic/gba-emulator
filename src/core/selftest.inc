@@ -2,31 +2,42 @@
 #define GBA_CORE_SELFTEST_INC
 
 #include "bus.inc"
+#include "core.inc"
 #include "state.h"
 #include "types.h"
 
-// A fixed sequence of bus traffic whose result is a single word.
+// Differential self-tests: fixed work whose result is a single word, run from
+// identical source on BOTH targets. The C++ build and the GLSL build must agree
+// exactly. This is the M4 harness in miniature, kept alive from M1 onward so
+// the dual-compile guarantee cannot rot between milestones.
+
+// Zeroes the whole machine.
 //
-// This exists to be run on BOTH targets from identical source: the C++ build
-// and the GLSL build must produce the same word for the same instance. It is
-// the smallest possible version of the M4 differential harness, and it keeps
-// the dual-compile guarantee honest from M1 onward rather than taking it on
-// faith until the interpreter lands.
-//
-// It deliberately touches regions with different behaviour: normal RAM, the
-// video byte-write quirks, the read-only cartridge, open bus, and the 8-bit
-// save bus.
-// Shared initialiser, so the two targets cannot drift in their starting state.
+// This must be exhaustive. C++ zeroes a `GbaState st{}` for free, but GLSL
+// leaves a local struct uninitialised, so any field left out here would be
+// garbage on the GPU and zero on the CPU -- a divergence in the harness itself
+// rather than in the code under test. The banked registers matter most: they
+// are invisible until a mode switch reads them.
 CORE_FN void selftest_init(INOUT(GbaState) st, U32 inst) {
     st.inst = inst;
+    for (U32 i = 0u; i < 16u; ++i) st.r[i] = 0u;
+    for (U32 i = 0u; i < NUM_BANKS; ++i) {
+        st.spsr[i] = 0u;
+        st.bank_r13[i] = 0u;
+        st.bank_r14[i] = 0u;
+    }
+    for (U32 i = 0u; i < 5u; ++i) { st.bank_fiq[i] = 0u; st.bank_usr[i] = 0u; }
+    st.cpsr = MODE_SYS;
     st.open_bus = 0u;
+    st.pc_dirty = 0u;
     st.cycles = 0u;
     st.halted = 0u;
     st.scanline = 0u;
     st.line_cycle = 0u;
-    st.cpsr = MODE_SYS;
 }
 
+// Bus traffic across regions with differing behaviour: normal RAM, the video
+// byte-write quirks, the read-only cartridge, open bus, and the 8-bit save bus.
 CORE_FN U32 bus_selftest(INOUT(GbaState) st) {
     U32 seed = st.inst * 2654435761u;
 
@@ -51,6 +62,38 @@ CORE_FN U32 bus_selftest(INOUT(GbaState) st) {
     acc = acc * 33u + ror32(acc, 7u);
     acc = acc * 33u + sign_extend(acc, 12u);
     return acc;
+}
+
+// Executes whatever the cartridge happens to contain and hashes the resulting
+// machine state.
+//
+// The caller fills the cartridge with pseudorandom words, so this interprets
+// essentially arbitrary instruction streams -- a cheap fuzz test of the decoder
+// across both compilers. Divergence here means the C++ and GLSL builds disagree
+// about some instruction, which is precisely the failure the architecture has
+// to be able to rule out. `step_cycles` bounds the work, so a stream that
+// branches to itself or wanders into open bus still terminates.
+CORE_FN U32 cpu_selftest(INOUT(GbaState) st, U32 cycles) {
+    U32 inst = st.inst;
+    selftest_init(st, inst);
+    // Seed the registers so different instances take different paths.
+    for (U32 i = 0u; i < 15u; ++i) st.r[i] = inst * (i + 1u) * 2654435761u;
+    st.r[13] = 0x03007F00u;
+    st.r[15] = 0x08000000u;
+
+    step_cycles(st, cycles);
+
+    U32 h = 0u;
+    for (U32 i = 0u; i < 16u; ++i) h = h * 33u + st.r[i];
+    h = h * 33u + st.cpsr;
+    for (U32 i = 0u; i < NUM_BANKS; ++i) {
+        h = h * 33u + st.spsr[i];
+        h = h * 33u + st.bank_r13[i];
+        h = h * 33u + st.bank_r14[i];
+    }
+    h = h * 33u + st.halted;
+    h = h * 33u + st.cycles;
+    return h;
 }
 
 #endif

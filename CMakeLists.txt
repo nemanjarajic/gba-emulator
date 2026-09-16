@@ -75,6 +75,11 @@ add_executable(m1_membus src/app/m1_membus.cpp)
 target_link_libraries(m1_membus PRIVATE gba_host)
 target_compile_options(m1_membus PRIVATE -Wall -Wextra)
 
+# Runs any of the jsmolka CPU test ROMs against the reference core.
+add_executable(cpu_test src/app/cpu_test.cpp)
+target_link_libraries(cpu_test PRIVATE gba_host)
+target_compile_options(cpu_test PRIVATE -Wall -Wextra)
+
 # Runs the same core source on both targets and diffs the results.
 add_executable(m1_parity src/app/m1_parity.cpp)
 target_link_libraries(m1_parity PRIVATE gba_host gba_vk)

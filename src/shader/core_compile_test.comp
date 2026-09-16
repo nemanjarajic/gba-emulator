@@ -1,9 +1,10 @@
 #version 450
 
-// Runs the shared bus self-test on the GPU, one instance per invocation.
+// Runs the shared self-tests on the GPU, one GBA instance per invocation.
 // The host runs the identical source as C++ and compares. See selftest.inc.
 
 #include "core.h"
+#include "core.inc"
 #include "selftest.inc"
 
 layout(local_size_x = 64) in;
@@ -15,5 +16,8 @@ void main() {
     GbaState st;
     selftest_init(st, inst);
 
-    g_fb[MEM_IDX(FB_WORDS, inst, 0u)] = bus_selftest(st);
+    uint result = bus_selftest(st);
+    result = result * 33u + cpu_selftest(st, 256u);
+
+    g_fb[MEM_IDX(FB_WORDS, inst, 0u)] = result;
 }

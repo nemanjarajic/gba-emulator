@@ -28,8 +28,11 @@ struct GbaState {
     U32 spsr[NUM_BANKS];
 
     // r8-r12 have a dedicated FIQ bank; r13/r14 are banked for all six modes.
-    U32 bank_fiq[5];  // r8-r12 while NOT in FIQ mode
-    U32 bank_usr[5];  // r8-r12 while in FIQ mode
+    // Only one of these two is "live" at a time: while outside FIQ mode the FIQ
+    // copies of r8-r12 park in bank_fiq, and while inside FIQ mode the user
+    // copies park in bank_usr.
+    U32 bank_fiq[5];
+    U32 bank_usr[5];
     U32 bank_r13[NUM_BANKS];
     U32 bank_r14[NUM_BANKS];
 
@@ -37,6 +40,11 @@ struct GbaState {
     // Reads from unmapped addresses return whatever was last driven on the
     // bus rather than zero. Games do rely on this.
     U32 open_bus;
+
+    // Set whenever an instruction writes r15, so the step loop knows not to
+    // advance the PC itself. A flag rather than a comparison because
+    // `MOV r15, r15` legitimately writes back the value the PC already holds.
+    U32 pc_dirty;
 
     // --- scheduler ---------------------------------------------------------
     U32 cycles;      // cycles consumed within the current dispatch

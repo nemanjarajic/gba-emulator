@@ -1,10 +1,10 @@
 // M1 parity gate: the same bus source, compiled as C++ and as GLSL, must
 // produce identical results.
 //
-// This is the smallest useful version of the M4 differential harness. The whole
-// project depends on one source tree compiling both ways and *behaving* the
-// same; proving that at M1 costs little, whereas discovering it is false at M4
-// would invalidate the architecture after the interpreter is already written.
+// This is the M4 differential harness in miniature. It now covers the ARM and
+// Thumb interpreters as well as the bus: each instance executes 256 cycles of
+// pseudorandom cartridge contents and the full machine state is hashed, so any
+// instruction the two compilers disagree about shows up as a mismatch.
 
 #include "core/selftest.inc"
 #include "gpu/instance_pool.h"
@@ -24,7 +24,17 @@ constexpr uint32_t kLocalSize = 64;  // must match core_compile_test.comp
 constexpr uint32_t kRomWords = 0x1000;
 
 // Identical synthetic cartridge and BIOS contents on both sides.
-uint32_t romWord(uint32_t i) { return 0xA0000000u + i * 0x01010101u; }
+//
+// Pseudorandom rather than a simple ramp: the cartridge is executed as code by
+// cpu_selftest, and a ramp would decode to long runs of the same condition code
+// and exercise almost nothing. Well-mixed words hit the whole decoder.
+uint32_t romWord(uint32_t i) {
+    uint32_t x = i * 2654435761u + 0x9E3779B9u;
+    x ^= x >> 16; x *= 0x7FEB352Du;
+    x ^= x >> 15; x *= 0x846CA68Bu;
+    x ^= x >> 16;
+    return x;
+}
 uint32_t biosWord(uint32_t i) { return 0xB1050000u + i; }
 
 }  // namespace
@@ -68,7 +78,9 @@ int main() {
     for (uint32_t i = 0; i < kInstances; ++i) {
         GbaState st{};
         selftest_init(st, i);
-        cpuResult[i] = bus_selftest(st);
+        uint32_t r = bus_selftest(st);
+        r = r * 33u + cpu_selftest(st, 256u);
+        cpuResult[i] = r;
     }
 
     // ---- compare ----------------------------------------------------------

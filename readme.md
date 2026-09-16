@@ -27,7 +27,14 @@ cmake --build build
 ./build/m0_square      # M0 gate: compute shader round-trip
 ./build/m1_membus      # M1 gate: memory bus behaviour (CPU)
 ./build/m1_parity      # M1 gate: CPU and GPU builds agree
+./tools/run_cpu_tests.sh   # M2/M3 gate: jsmolka CPU test ROMs
 ```
+
+Test ROMs come from `third_party/gba-tests` (cloned from jsmolka/gba-tests).
+
+No BIOS image is needed or shipped. The GBA BIOS is copyrighted, so
+`src/core/bios.inc` implements the SWI calls directly (Div, Sqrt, CpuSet,
+CpuFastSet, Halt) and `hleBoot` sets up the registers the BIOS would have left.
 
 `env.sh` sets `VK_DRIVER_FILES`, `VK_LAYER_PATH` and `DYLD_LIBRARY_PATH`.
 All three are needed on a Homebrew Vulkan install; without them you get
@@ -42,14 +49,21 @@ same ROM on both builds in lockstep and the first register mismatch names the
 exact broken opcode. Debugging a shader-resident ARM7TDMI without that oracle
 is not realistic.
 
+## A note on M2 and M3
+
+The plan treated the ARM and Thumb interpreters as separable milestones. They
+are not: `arm.gba` test 50 deliberately `BX`es into Thumb code to verify the
+mode transition, so the ARM gate cannot pass without a working Thumb decoder.
+They were implemented and gated together.
+
 ## Milestones
 
 | | | Status |
 |---|---|---|
 | M0 | Toolchain + compute shader round-trip | **done** |
 | M1 | Core scaffold, memory map, dual-compile proven | **done** |
-| M2 | ARM mode interpreter (CPU) — passes `arm.gba` | |
-| M3 | Thumb mode interpreter (CPU) — passes `thumb.gba` | |
+| M2 | ARM interpreter — passes `arm.gba` | **done** |
+| M3 | Thumb interpreter — passes `thumb.gba`, `memory.gba` | **done** |
 | M4 | Same core on GPU, lockstep-verified against CPU | |
 | M5 | PPU bitmap modes — first pixels | |
 | M6 | Tiled modes and sprites | |
