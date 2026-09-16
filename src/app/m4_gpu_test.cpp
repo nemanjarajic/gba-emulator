@@ -15,6 +15,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -72,6 +73,7 @@ int main(int argc, char** argv) {
 
     GbaState cpuState{};
     host::hleBoot(cpuState);
+    g_flags = (getenv("NO_SAVE") != nullptr) ? FLAG_NO_SAVE : 0u;
 
     const auto cpuT0 = std::chrono::steady_clock::now();
     uint64_t cycles = 0;
@@ -101,7 +103,10 @@ int main(int argc, char** argv) {
     ctx.init(/*validation=*/true, /*debugPrintf=*/false);
 
     InstancePool pool;
-    pool.create(ctx, instances, uint32_t(rom.size()), /*withFramebuffers=*/true);
+    // NO_SAVE=1 exercises the pool built without save memory, which reclaims a
+    // quarter of the per-instance footprint.
+    const bool withSave = getenv("NO_SAVE") == nullptr;
+    pool.create(ctx, instances, uint32_t(rom.size()), /*withFramebuffers=*/true, withSave);
     uploadBuffer(ctx, pool.rom, rom.data(), rom.size() * 4);
     // The GPU needs the same BIOS: the interrupt path runs real ARM code from
     // the vector table, so a zeroed BIOS region would diverge from the CPU.
@@ -129,7 +134,7 @@ int main(int argc, char** argv) {
     uint32_t dispatches = 0;
     while (done < totalCycles) {
         const uint32_t chunk = std::min(kCyclesPerDispatch, totalCycles - done);
-        CorePush push{instances, uint32_t(rom.size()), chunk, 0};
+        CorePush push{instances, uint32_t(rom.size()), chunk, pool.baseFlags()};
         dispatchBlocking(ctx, pipe, (instances + kLocalSize - 1) / kLocalSize, &push, sizeof(push));
         done += chunk;
         ++dispatches;

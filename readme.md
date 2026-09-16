@@ -106,6 +106,14 @@ instructions), `WATCH=<addr>` (report every instruction that changes a word),
 `TRACEPC=<addr>` (dump registers through a code range) and `HIST=1` (a profile
 of which ROM regions the game actually executes).
 
+## Other GPUs
+
+`./build/gpu_check <rom> <instances>` is the preflight: it reports the device,
+the limits that matter, how many instances fit, and re-measures the two results
+that came out counter-intuitively on Apple Silicon (the register cliff and the
+memory layout) so you learn which way they go on yours. See
+`docs/windows-nvidia.md` for a Windows/NVIDIA bring-up guide.
+
 ## A trap worth knowing about
 
 `GbaState` is 83 words, and that is the largest it can be before the shader's

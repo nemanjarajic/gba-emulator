@@ -45,6 +45,10 @@ KCONST U32 FLASH_CMD_ADDR2 = 0x2AAAu;
 KCONST U32 FLASH_BANK_SIZE = 0x10000u;
 
 CORE_FN U32 sram_read8(INOUT(GbaState) st, U32 addr) {
+    // Erased flash reads as all ones, which is also what a cartridge with no
+    // save memory looks like.
+    if ((g_flags & FLAG_NO_SAVE) != 0u) return 0xFFu;
+
     U32 off = addr & 0xFFFFu;
 
     // While in ID mode the first two bytes read as the chip identity.
@@ -74,6 +78,8 @@ CORE_FN void flash_erase_range(INOUT(GbaState) st, U32 first_byte, U32 length) {
 }
 
 CORE_FN void sram_write8(INOUT(GbaState) st, U32 addr, U32 val) {
+    if ((g_flags & FLAG_NO_SAVE) != 0u) return;
+
     U32 off = addr & 0xFFFFu;
     U32 b = val & 0xFFu;
 

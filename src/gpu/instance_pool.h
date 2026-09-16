@@ -22,10 +22,30 @@ struct CorePush {
 
 struct InstancePool {
     uint32_t numInstances = 0;
+    bool hasSave = true;
     Buffer bios, rom, ewram, iwram, vram, pram, oam, io, sram, fb, state, input, obs;
 
-    void create(VkContext& ctx, uint32_t instances, uint32_t romWords, bool withFramebuffers);
+    // `withSave` allocates 128 KiB of flash per instance. That is a quarter of
+    // the whole per-instance footprint, and a throughput workload that never
+    // saves can reclaim it -- pass FLAG_NO_SAVE in the dispatch flags to match.
+    void create(VkContext& ctx, uint32_t instances, uint32_t romWords, bool withFramebuffers,
+                bool withSave = true);
+
+    // Bytes one instance costs, for budgeting against a card's VRAM.
+    static uint64_t bytesPerInstance(bool withFramebuffers, bool withSave);
+
+    // Checks the pool against the device's limits and prints what is wrong.
+    // Returns false instead of aborting, so a caller can retry with fewer
+    // instances rather than dying.
+    static bool fits(const VkContext& ctx, uint32_t instances, uint32_t romWords,
+                     bool withFramebuffers, bool withSave, bool verbose);
     void destroy(VkContext& ctx);
+
+    // Dispatch flags this pool requires. Passing FLAG_NO_SAVE is not optional
+    // when the pool was built without save memory: the shader would otherwise
+    // index a buffer that is 128 KiB per instance too small. Always start from
+    // this rather than from zero.
+    uint32_t baseFlags() const { return hasSave ? 0u : FLAG_NO_SAVE; }
 
     // Descriptor binding order; see state.h.
     std::vector<Buffer*> bindings();

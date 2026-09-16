@@ -171,6 +171,10 @@ KCONST U32 FLAG_RENDER = 1u;
 // Write a downsampled observation at the end of the dispatch. Implies
 // FLAG_RENDER, since there is nothing to downsample otherwise.
 KCONST U32 FLAG_OBSERVE = 2u;
+// No save memory is allocated for this pool. Reads return the erased value and
+// writes are dropped, so the 128 KiB per instance -- a quarter of the whole
+// footprint -- can be reclaimed when a workload never saves.
+KCONST U32 FLAG_NO_SAVE = 4u;
 
 // Index of word `w` of instance `inst` in a region `words_per_inst` long.
 //
