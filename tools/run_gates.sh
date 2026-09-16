@@ -21,4 +21,15 @@ printf '%-12s\n' "M2/M3"
 ./tools/run_cpu_tests.sh | sed 's/^/    /' || fail=1
 run M4 ./build/m4_gpu_test
 run M5 ./build/m5_ppu
+run M6-sprites ./build/m6_sprites
+run M6-effects ./build/m6_effects
+printf '%-12s\n' "M6-roms"
+for r in stripes shades hello; do
+    printf '    %-10s ' "$r"
+    if ./build/render_rom "third_party/gba-tests/ppu/$r.gba" 4 "ppu_$r.png" >/dev/null 2>&1; then
+        echo "rendered, CPU/GPU identical"
+    else
+        echo "FAILED"; fail=1
+    fi
+done
 exit $fail

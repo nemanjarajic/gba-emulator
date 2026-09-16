@@ -63,6 +63,8 @@ CORE_FN U32 sign_extend(U32 x, U32 bits) {
     return U32(I32(x << shift) >> I32(shift));
 }
 
+CORE_FN U32 umin(U32 a, U32 b) { return (a < b) ? a : b; }
+
 // Population count. GLSL has bitCount() and C++20 has std::popcount, but the
 // whole point of this file is that both targets compile the SAME text, so it is
 // spelled out once here. LDM/STM need it on every execution.

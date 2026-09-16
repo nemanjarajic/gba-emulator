@@ -34,6 +34,9 @@ cmake --build build
 ./tools/run_cpu_tests.sh   # M2/M3 gate: jsmolka CPU test ROMs
 ./build/m4_gpu_test        # M4 gate: same ROM inside the compute shader
 ./build/m5_ppu             # M5 gate: bitmap modes, writes mode{3,4,5}.png
+./build/m6_sprites         # M6 gate: sprite flips, sizes, bounds
+./build/m6_effects         # M6 gate: priority, windows, blending, affine
+./build/render_rom <rom> [frames] [out.png]   # render any ROM
 ./tools/run_gates.sh       # everything at once
 ```
 
@@ -62,6 +65,24 @@ layer in `src/core/types.h`. That buys a differential test harness: run the
 same ROM on both builds in lockstep and the first register mismatch names the
 exact broken opcode. Debugging a shader-resident ARM7TDMI without that oracle
 is not realistic.
+
+## What the PPU covers
+
+Verified against test ROMs or explicit checks: text backgrounds (modes 0-2),
+bitmap modes 3/4/5, affine backgrounds with and without display-area overflow,
+sprites with both flips and correct bounds, object disable, layer priority,
+windows including exact edge semantics, alpha blending, brightness increase and
+decrease, and affine sprites (an identity matrix reproduces a plain sprite
+exactly).
+
+Implemented but **not yet covered by a test**: mosaic, the object window,
+semi-transparent sprites, 8bpp background tiles, background maps wider or
+taller than 256, two-dimensional sprite tile mapping, and sprite sizes other
+than 16x16. These are the first places to look if a real game renders wrongly.
+
+Rendering is scanline granular, so mid-scanline register writes -- raster
+effects like a per-line gradient or a wobble -- will not reproduce. That is a
+deliberate scope decision from the plan.
 
 ## A note on M5's test ROMs
 
@@ -92,7 +113,7 @@ They were implemented and gated together.
 | M3 | Thumb interpreter — passes `thumb.gba`, `memory.gba` | **done** |
 | M4 | Same core on GPU, verified against CPU | **done** |
 | M5 | PPU bitmap modes 3/4/5 — first pixels | **done** |
-| M6 | Tiled modes and sprites | |
+| M6 | Tiled modes, sprites, windows, blending | **done** |
 | M7 | DMA, timers, interrupts, input | |
 | M8 | Scale out; measure divergence and memory layout | |
 | M9 | Throughput harness | |

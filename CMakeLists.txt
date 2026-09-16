@@ -92,6 +92,22 @@ target_link_libraries(m5_ppu PRIVATE gba_host gba_vk)
 add_dependencies(m5_ppu shaders)
 target_compile_options(m5_ppu PRIVATE -Wall -Wextra)
 
+add_executable(m6_sprites src/app/m6_sprites.cpp)
+target_link_libraries(m6_sprites PRIVATE gba_host gba_vk)
+add_dependencies(m6_sprites shaders)
+target_compile_options(m6_sprites PRIVATE -Wall -Wextra)
+
+add_executable(m6_effects src/app/m6_effects.cpp)
+target_link_libraries(m6_effects PRIVATE gba_host gba_vk)
+add_dependencies(m6_effects shaders)
+target_compile_options(m6_effects PRIVATE -Wall -Wextra)
+
+# Renders any ROM on both targets, compares, and writes a PNG.
+add_executable(render_rom src/app/render_rom.cpp)
+target_link_libraries(render_rom PRIVATE gba_host gba_vk)
+add_dependencies(render_rom shaders)
+target_compile_options(render_rom PRIVATE -Wall -Wextra)
+
 # Runs the same core source on both targets and diffs the results.
 add_executable(m1_parity src/app/m1_parity.cpp)
 target_link_libraries(m1_parity PRIVATE gba_host gba_vk)
