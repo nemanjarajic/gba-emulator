@@ -66,6 +66,24 @@ same ROM on both builds in lockstep and the first register mismatch names the
 exact broken opcode. Debugging a shader-resident ARM7TDMI without that oracle
 is not realistic.
 
+## Running a commercial game
+
+```sh
+./tools/run_game.sh "/path/to/game.gba" 190 out.png
+CPU_ONLY=1 VERBOSE=1 ./tools/run_game.sh "/path/to/game.gba" 400   # fast exploration
+```
+
+Pokemon Emerald boots and renders its Game Freak screen, with the GPU
+byte-identical to the CPU reference. Getting there needed the whole M7 stack
+plus 128 KiB Flash save emulation: Emerald sets its main callback to NULL and
+does nothing forever if it cannot identify a save chip.
+
+`cpu_test` is the debugging tool for a ROM that misbehaves. It takes
+`BRANCHES=1` (log every branch), `BRANCH_FROM=<n>` (start logging after n
+instructions), `WATCH=<addr>` (report every instruction that changes a word),
+`TRACEPC=<addr>` (dump registers through a code range) and `HIST=1` (a profile
+of which ROM regions the game actually executes).
+
 ## What the PPU covers
 
 Verified against test ROMs or explicit checks: text backgrounds (modes 0-2),
@@ -114,7 +132,7 @@ They were implemented and gated together.
 | M4 | Same core on GPU, verified against CPU | **done** |
 | M5 | PPU bitmap modes 3/4/5 — first pixels | **done** |
 | M6 | Tiled modes, sprites, windows, blending | **done** |
-| M7 | DMA, timers, interrupts, input | |
+| M7 | DMA, timers, interrupts, BIOS, Flash saves | **mostly** |
 | M8 | Scale out; measure divergence and memory layout | |
 | M9 | Throughput harness | |
 

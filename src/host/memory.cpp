@@ -62,6 +62,37 @@ bool loadBinary(const std::string& path, std::vector<uint32_t>& out) {
     return true;
 }
 
+void installBios(std::vector<uint32_t>& bios) {
+    bios.assign(BIOS_WORDS, 0u);
+
+    // Vector table. Reset is never taken (hleBoot jumps straight to the
+    // cartridge); the unused vectors return immediately rather than running off
+    // into zeros, which makes a stray exception survivable and debuggable.
+    constexpr uint32_t kMovsPcLr = 0xE1B0F00Eu;  // MOVS pc, lr
+    bios[0x00 / 4] = 0xEA00000Eu;                // B 0x40
+    bios[0x04 / 4] = kMovsPcLr;                  // undefined instruction
+    bios[0x08 / 4] = kMovsPcLr;                  // SWI: unhandled ones just return
+    bios[0x0C / 4] = kMovsPcLr;                  // prefetch abort
+    bios[0x10 / 4] = kMovsPcLr;                  // data abort
+    bios[0x14 / 4] = kMovsPcLr;                  // reserved
+    bios[0x18 / 4] = 0xEA000008u;                // B 0x40 -- IRQ
+    bios[0x1C / 4] = kMovsPcLr;                  // FIQ
+
+    // The stock IRQ handler, at 0x40. It saves the registers the ARM calling
+    // convention treats as scratch, then jumps through the pointer the game
+    // stored at 0x03007FFC (reached here as 0x03FFFFFC, an IWRAM mirror).
+    static const uint32_t kIrqHandler[] = {
+        0xE92D500Fu,  // STMFD sp!, {r0-r3, r12, lr}
+        0xE3A00404u,  // MOV   r0, #0x04000000
+        0xE28FE000u,  // ADD   lr, pc, #0          return address for the handler
+        0xE510F004u,  // LDR   pc, [r0, #-4]       jump to [0x03FFFFFC]
+        0xE8BD500Fu,  // LDMFD sp!, {r0-r3, r12, lr}
+        0xE25EF004u,  // SUBS  pc, lr, #4          return, restoring CPSR
+    };
+    for (size_t i = 0; i < sizeof(kIrqHandler) / sizeof(kIrqHandler[0]); ++i)
+        bios[0x40 / 4 + i] = kIrqHandler[i];
+}
+
 void hleBoot(GbaState& st) {
     // Values the real BIOS leaves behind before jumping to the cartridge. The
     // three stack pointers matter most: a ROM that takes an interrupt or a SWI
@@ -86,6 +117,15 @@ void hleBoot(GbaState& st) {
     st.halted = 0u;
     st.scanline = 0u;
     st.line_cycle = 0u;
+    st.dma_enabled = 0u;
+    for (U32 i = 0u; i < 4u; ++i) {
+        st.dma_src[i] = 0u;
+        st.dma_dst[i] = 0u;
+        st.dma_count[i] = 0u;
+        st.timer_counter[i] = 0u;
+        st.timer_reload[i] = 0u;
+        st.timer_prescale[i] = 0u;
+    }
 }
 
 }  // namespace gba::host

@@ -23,6 +23,9 @@ namespace {
 
 constexpr uint32_t kLocalSize = 64;
 constexpr uint32_t kInstances = 16;
+// Larger than the gates use: a full ROM run is millions of cycles, and per
+// dispatch overhead otherwise dominates. Still far inside the macOS watchdog.
+constexpr uint32_t kCyclesPerDispatch = 262144;
 
 size_t countDifferences(const std::vector<uint32_t>& a, const std::vector<uint32_t>& b) {
     size_t n = 0;
@@ -63,17 +66,47 @@ int main(int argc, char** argv) {
     host::MemoryPool hostPool;
     hostPool.allocate(1, uint32_t(rom.size()), /*withFramebuffers=*/true);
     hostPool.bind();
+    host::installBios(hostPool.bios);
+    hostPool.io[REG_KEYINPUT >> 2] = 0x03FF;  // KEYINPUT is active low: no keys held
     std::copy(rom.begin(), rom.end(), hostPool.rom.begin());
     g_flags = FLAG_RENDER;
 
     GbaState cpuState{};
     host::hleBoot(cpuState);
-    for (uint32_t i = 0; i < totalCycles; ++i) cpu_step(cpuState);
+
+    // Run a frame at a time so progress is visible: a long boot sequence with
+    // the display off is indistinguishable from a hang otherwise.
+    const bool verbose = getenv("VERBOSE") != nullptr;
+    for (uint32_t f = 0; f < frames; ++f) {
+        step_cycles(cpuState, CYCLES_PER_FRAME);
+        if (verbose) {
+            const uint32_t dispcnt = hostPool.io[0] & 0xFFFF;
+            const uint32_t ie_if = hostPool.io[REG_IE >> 2];
+            std::printf("  frame %4u DISPCNT=%04X mode %u bg=%X%s  IE=%04X IF=%04X IME=%u "
+                        "handler=%08X biosflags=%08X pc=%08X\n",
+                        f + 1, dispcnt, dispcnt & 7, (dispcnt >> 8) & 0xF,
+                        (dispcnt & 0x80) ? " BLANK" : "", ie_if & 0xFFFF, ie_if >> 16,
+                        hostPool.io[REG_IME >> 2] & 1, bus_read32(cpuState, 0x03007FFC),
+                        bus_read32(cpuState, 0x03007FF8), cpuState.r[15]);
+            std::printf("             DISPSTAT=%04X vcount=%u  gameflags[30022DC]=%04X "
+                        "halted=%u\n",
+                        hostPool.io[1] & 0xFFFF, cpuState.scanline,
+                        bus_read16(cpuState, 0x030022DC), cpuState.halted);
+        }
+    }
 
     const std::vector<uint32_t> cpuFb(hostPool.fb.begin(), hostPool.fb.begin() + FB_WORDS);
     std::printf("%s: %u frames (%u cycles)\n", romPath.c_str(), frames, totalCycles);
     std::printf("  DISPCNT = 0x%04X (mode %u), %u distinct colours\n",
                 hostPool.io[0] & 0xFFFF, hostPool.io[0] & 7, distinctColours(cpuFb));
+
+    // Exploration mode: the CPU reference alone, no Vulkan. Useful when hunting
+    // for the frame a game finally draws something on.
+    if (getenv("CPU_ONLY")) {
+        host::writePng(outPath, host::bgr555ToRgb(cpuFb, SCREEN_W, SCREEN_H), SCREEN_W, SCREEN_H);
+        std::printf("  wrote %s (CPU only)\n", outPath.c_str());
+        return 0;
+    }
 
     // ---- GPU ---------------------------------------------------------------
     VkContext ctx;
@@ -81,6 +114,9 @@ int main(int argc, char** argv) {
     InstancePool pool;
     pool.create(ctx, kInstances, uint32_t(rom.size()), /*withFramebuffers=*/true);
     uploadBuffer(ctx, pool.rom, rom.data(), rom.size() * 4);
+    // The GPU needs the same BIOS: the interrupt path runs real ARM code from
+    // the vector table, so a zeroed BIOS region would diverge from the CPU.
+    uploadBuffer(ctx, pool.bios, hostPool.bios.data(), hostPool.bios.size() * 4);
 
     std::vector<GbaState> states(kInstances);
     for (uint32_t i = 0; i < kInstances; ++i) {
@@ -96,12 +132,36 @@ int main(int argc, char** argv) {
     pipe.bindBuffers(ctx, pool.bindings());
 
     for (uint32_t done = 0; done < totalCycles;) {
-        const uint32_t chunk = std::min(16384u, totalCycles - done);
+        const uint32_t chunk = std::min(kCyclesPerDispatch, totalCycles - done);
         CorePush push{kInstances, uint32_t(rom.size()), chunk, FLAG_RENDER};
         dispatchBlocking(ctx, pipe, (kInstances + kLocalSize - 1) / kLocalSize, &push,
                          sizeof(push));
         done += chunk;
     }
+
+    // Compare machine state before pixels: a framebuffer diff says the two
+    // disagree, but the register file says where.
+    std::vector<GbaState> gpuStates;
+    pool.downloadStates(ctx, gpuStates);
+    const GbaState& g = gpuStates[0];
+    int regDiffs = 0;
+    for (uint32_t i = 0; i < 16; ++i)
+        if (g.r[i] != cpuState.r[i]) {
+            std::printf("  r%-2u  GPU %08X  CPU %08X\n", i, g.r[i], cpuState.r[i]);
+            ++regDiffs;
+        }
+    if (g.cpsr != cpuState.cpsr)
+        std::printf("  cpsr GPU %08X  CPU %08X\n", g.cpsr, cpuState.cpsr);
+    if (g.cycles != cpuState.cycles)
+        std::printf("  cycles GPU %u CPU %u\n", g.cycles, cpuState.cycles);
+    if (g.scanline != cpuState.scanline)
+        std::printf("  scanline GPU %u CPU %u\n", g.scanline, cpuState.scanline);
+    if (g.halted != cpuState.halted)
+        std::printf("  halted GPU %u CPU %u\n", g.halted, cpuState.halted);
+    if (g.flash_id_mode != cpuState.flash_id_mode || g.flash_bank != cpuState.flash_bank)
+        std::printf("  flash GPU id=%u bank=%u  CPU id=%u bank=%u\n", g.flash_id_mode,
+                    g.flash_bank, cpuState.flash_id_mode, cpuState.flash_bank);
+    std::printf("  register mismatches: %d\n", regDiffs);
 
     std::vector<uint32_t> gpuFb(FB_WORDS);
     downloadBuffer(ctx, pool.fb, gpuFb.data(), FB_WORDS * 4);

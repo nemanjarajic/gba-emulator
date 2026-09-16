@@ -147,6 +147,8 @@ void runMode(uint32_t mode, const std::vector<uint32_t>& rom) {
     host::MemoryPool hostPool;
     hostPool.allocate(1, uint32_t(rom.size()), /*withFramebuffers=*/true);
     hostPool.bind();
+    host::installBios(hostPool.bios);
+    hostPool.io[REG_KEYINPUT >> 2] = 0x03FF;  // KEYINPUT is active low: no keys held
     std::copy(rom.begin(), rom.end(), hostPool.rom.begin());
     g_flags = FLAG_RENDER;
 
@@ -202,6 +204,9 @@ void runMode(uint32_t mode, const std::vector<uint32_t>& rom) {
     InstancePool pool;
     pool.create(ctx, kInstances, uint32_t(rom.size()), /*withFramebuffers=*/true);
     uploadBuffer(ctx, pool.rom, rom.data(), rom.size() * 4);
+    // The GPU needs the same BIOS: the interrupt path runs real ARM code from
+    // the vector table, so a zeroed BIOS region would diverge from the CPU.
+    uploadBuffer(ctx, pool.bios, hostPool.bios.data(), hostPool.bios.size() * 4);
 
     std::vector<GbaState> states(kInstances);
     for (uint32_t i = 0; i < kInstances; ++i) {

@@ -46,6 +46,31 @@ struct GbaState {
     // `MOV r15, r15` legitimately writes back the value the PC already holds.
     U32 pc_dirty;
 
+    // --- DMA ---------------------------------------------------------------
+    // Latched copies of the source, destination and count. Hardware snapshots
+    // these when a channel is enabled, so later writes to the registers do not
+    // disturb a transfer already in flight.
+    U32 dma_src[4];
+    U32 dma_dst[4];
+    U32 dma_count[4];
+    U32 dma_enabled;  // bitmask: channels whose registers have been latched
+
+    // --- timers ------------------------------------------------------------
+    // TMxCNT_L reads as the live counter but writes the reload value, so the
+    // two cannot share the I/O word.
+    U32 timer_counter[4];
+    U32 timer_reload[4];
+    U32 timer_prescale[4];  // cycles accumulated towards the next increment
+
+    // --- save media --------------------------------------------------------
+    // Flash is a command-driven device, not a RAM array: the game writes a
+    // magic sequence to unlock each operation, and reads a chip ID to decide
+    // whether a cartridge has save memory at all.
+    U32 flash_phase;   // position in the AA/55/command unlock sequence
+    U32 flash_id_mode; // reads return the chip ID rather than data
+    U32 flash_bank;    // 128 KiB parts are two banks of 64 KiB
+    U32 flash_erase;   // an erase command has been unlocked
+
     // --- scheduler ---------------------------------------------------------
     U32 cycles;      // cycles consumed within the current dispatch
     U32 halted;      // set by the HALT BIOS call; cleared by an interrupt
@@ -137,7 +162,7 @@ KCONST U32 FLAG_RENDER = 1u;
 // so its C++ layout must match what GLSL sees. Every member being a U32 or an
 // array of U32 makes that true (std430 gives both a 4-byte stride); this
 // catches a member of any other type being added later.
-static_assert(sizeof(GbaState) == 52u * 4u, "GbaState must stay std430-compatible");
+static_assert(sizeof(GbaState) == 81u * 4u, "GbaState must stay std430-compatible");
 #endif
 
 #endif  // GBA_CORE_STATE_H

@@ -66,6 +66,8 @@ int main(int argc, char** argv) {
     host::MemoryPool hostPool;
     hostPool.allocate(1, uint32_t(rom.size()), /*withFramebuffers=*/true);
     hostPool.bind();
+    host::installBios(hostPool.bios);
+    hostPool.io[REG_KEYINPUT >> 2] = 0x03FF;  // KEYINPUT is active low: no keys held
     std::copy(rom.begin(), rom.end(), hostPool.rom.begin());
 
     GbaState cpuState{};
@@ -101,6 +103,9 @@ int main(int argc, char** argv) {
     InstancePool pool;
     pool.create(ctx, instances, uint32_t(rom.size()), /*withFramebuffers=*/true);
     uploadBuffer(ctx, pool.rom, rom.data(), rom.size() * 4);
+    // The GPU needs the same BIOS: the interrupt path runs real ARM code from
+    // the vector table, so a zeroed BIOS region would diverge from the CPU.
+    uploadBuffer(ctx, pool.bios, hostPool.bios.data(), hostPool.bios.size() * 4);
 
     std::vector<GbaState> states(instances);
     for (uint32_t i = 0; i < instances; ++i) {

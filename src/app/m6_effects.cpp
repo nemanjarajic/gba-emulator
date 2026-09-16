@@ -95,6 +95,8 @@ Result runScene(VkContext& ctx, const Scene& scene) {
     host::MemoryPool hostPool;
     hostPool.allocate(1, uint32_t(rom.size()), /*withFramebuffers=*/true);
     hostPool.bind();
+    host::installBios(hostPool.bios);
+    hostPool.io[REG_KEYINPUT >> 2] = 0x03FF;  // KEYINPUT is active low: no keys held
     hostPool.rom[0] = rom[0];
     std::copy(scene.vram.begin(), scene.vram.end(), hostPool.vram.begin());
     std::copy(scene.pram.begin(), scene.pram.end(), hostPool.pram.begin());
@@ -104,7 +106,7 @@ Result runScene(VkContext& ctx, const Scene& scene) {
 
     GbaState cpuState{};
     host::hleBoot(cpuState);
-    for (uint32_t i = 0; i < CYCLES_PER_FRAME; ++i) cpu_step(cpuState);
+    step_cycles(cpuState, CYCLES_PER_FRAME);
 
     Result r;
     r.cpuFb.assign(hostPool.fb.begin(), hostPool.fb.begin() + FB_WORDS);

@@ -114,6 +114,8 @@ int main() {
     host::MemoryPool hostPool;
     hostPool.allocate(1, uint32_t(rom.size()), /*withFramebuffers=*/true);
     hostPool.bind();
+    host::installBios(hostPool.bios);
+    hostPool.io[REG_KEYINPUT >> 2] = 0x03FF;  // KEYINPUT is active low: no keys held
     hostPool.rom[0] = rom[0];
     std::copy(vram.begin(), vram.end(), hostPool.vram.begin());
     std::copy(pram.begin(), pram.end(), hostPool.pram.begin());
@@ -123,7 +125,7 @@ int main() {
 
     GbaState cpuState{};
     host::hleBoot(cpuState);
-    for (uint32_t i = 0; i < CYCLES_PER_FRAME; ++i) cpu_step(cpuState);
+    step_cycles(cpuState, CYCLES_PER_FRAME);
 
     const std::vector<uint32_t> cpuFb(hostPool.fb.begin(), hostPool.fb.begin() + FB_WORDS);
 

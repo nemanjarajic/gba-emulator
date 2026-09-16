@@ -406,10 +406,10 @@ CORE_FN void ppu_render_scanline(INOUT(GbaState) st, U32 y) {
                     obj_line[U32(sx)] = obj_line[U32(sx)] | OBJ_WINDOW;
                     continue;
                 }
-                U32 packed = pram_read16_raw(st, idx * 2u) | OBJ_PRESENT | (prio << 20u);
-                if (mode_bits == 1u) packed = packed | OBJ_SEMI;
+                U32 obj_pixel = pram_read16_raw(st, idx * 2u) | OBJ_PRESENT | (prio << 20u);
+                if (mode_bits == 1u) obj_pixel = obj_pixel | OBJ_SEMI;
                 // Preserve any window mark already recorded at this pixel.
-                obj_line[U32(sx)] = packed | (obj_line[U32(sx)] & OBJ_WINDOW);
+                obj_line[U32(sx)] = obj_pixel | (obj_line[U32(sx)] & OBJ_WINDOW);
             }
         }
     }

@@ -33,6 +33,16 @@ void InstancePool::create(VkContext& ctx, uint32_t instances, uint32_t romWords,
     for (Buffer* b : bindings()) fillBuffer(ctx, *b, 0u);
     // Save memory powers on erased, not zeroed.
     fillBuffer(ctx, sram, 0xFFFFFFFFu);
+
+    // KEYINPUT is active low, so a zeroed I/O region means every button is
+    // held. Games take very different boot paths when they see that -- the
+    // soft-reset combination is buttons-held -- so this must be set before an
+    // instance runs a single instruction.
+    std::vector<uint32_t> ioImage(IO_WORDS, 0u);
+    ioImage[REG_KEYINPUT >> 2] = 0x03FFu;
+    for (uint32_t i = 0; i < instances; ++i)
+        uploadBuffer(ctx, io, ioImage.data(), ioImage.size() * sizeof(uint32_t),
+                     VkDeviceSize(i) * IO_WORDS * sizeof(uint32_t));
 }
 
 std::vector<Buffer*> InstancePool::bindings() {

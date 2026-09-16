@@ -140,13 +140,52 @@ int main() {
     bus_write8(st, 0x06010000u, 0xCDu);
     checkEq("VRAM 0x10000 is BG in mode 3", bus_read16(st, 0x06010000u), 0xCDCDu);
 
-    std::printf("save memory (8-bit bus)\n");
+    std::printf("save memory (128 KiB Flash on an 8-bit bus)\n");
+    // Flash is command driven: a bare write stores nothing. Everything below
+    // goes through the unlock sequence a real cartridge requires.
+    auto unlock = [&](uint32_t command) {
+        bus_write8(st, 0x0E005555u, 0xAAu);
+        bus_write8(st, 0x0E002AAAu, 0x55u);
+        bus_write8(st, 0x0E005555u, command);
+    };
+
     bus_write8(st, 0x0E000000u, 0x5Au);
-    checkEq("save read8", bus_read8(st, 0x0E000000u), 0x5Au);
-    checkEq("save read32 replicates byte", bus_read32(st, 0x0E000000u), 0x5A5A5A5Au);
-    checkEq("save read16 replicates byte", bus_read16(st, 0x0E000000u), 0x5A5Au);
-    bus_write32(st, 0x0E000004u, 0x11223344u);
-    checkEq("save write32 stores low byte only", bus_read8(st, 0x0E000004u), 0x44u);
+    checkEq("a bare write is ignored", bus_read8(st, 0x0E000000u), 0xFFu);
+
+    unlock(0x90u);  // enter ID mode
+    checkEq("ID mode: manufacturer", bus_read8(st, 0x0E000000u), 0xC2u);
+    checkEq("ID mode: device", bus_read8(st, 0x0E000001u), 0x09u);
+    unlock(0xF0u);  // leave ID mode
+    checkEq("leaving ID mode restores data", bus_read8(st, 0x0E000000u), 0xFFu);
+
+    unlock(0xA0u);  // program one byte
+    bus_write8(st, 0x0E000000u, 0x5Au);
+    checkEq("programmed byte reads back", bus_read8(st, 0x0E000000u), 0x5Au);
+    checkEq("the program command is one byte only", bus_read8(st, 0x0E000001u), 0xFFu);
+
+    // Still an 8-bit bus: wider reads see the addressed byte replicated.
+    checkEq("read32 replicates the byte", bus_read32(st, 0x0E000000u), 0x5A5A5A5Au);
+    checkEq("read16 replicates the byte", bus_read16(st, 0x0E000000u), 0x5A5Au);
+
+    // 128 KiB parts are two 64 KiB banks selected by a command.
+    unlock(0xB0u);
+    bus_write8(st, 0x0E000000u, 0x01u);  // select bank 1
+    checkEq("bank 1 is separate storage", bus_read8(st, 0x0E000000u), 0xFFu);
+    unlock(0xA0u);
+    bus_write8(st, 0x0E000000u, 0x77u);
+    checkEq("bank 1 programmed", bus_read8(st, 0x0E000000u), 0x77u);
+    unlock(0xB0u);
+    bus_write8(st, 0x0E000000u, 0x00u);  // back to bank 0
+    checkEq("bank 0 is unchanged", bus_read8(st, 0x0E000000u), 0x5Au);
+
+    // Erase returns a sector to all ones; flash cannot clear bits by writing.
+    bus_write8(st, 0x0E005555u, 0xAAu);
+    bus_write8(st, 0x0E002AAAu, 0x55u);
+    bus_write8(st, 0x0E005555u, 0x80u);  // erase unlocked
+    bus_write8(st, 0x0E005555u, 0xAAu);
+    bus_write8(st, 0x0E002AAAu, 0x55u);
+    bus_write8(st, 0x0E000000u, 0x30u);  // erase the sector at 0x0000
+    checkEq("sector erase restores 0xFF", bus_read8(st, 0x0E000000u), 0xFFu);
 
     std::printf("per-instance isolation\n");
     GbaState st1{};

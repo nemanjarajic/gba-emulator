@@ -32,6 +32,13 @@ struct MemoryPool {
 // Returns false if the file cannot be read.
 bool loadBinary(const std::string& path, std::vector<uint32_t>& out);
 
+// Fills a BIOS image with a minimal but real vector table.
+//
+// Most BIOS calls are handled high-level in bios.inc, but the interrupt path
+// cannot be: a game reaches its own handler because the BIOS loads a pointer
+// from 0x03007FFC and jumps through it. That has to be executed as ARM code.
+void installBios(std::vector<uint32_t>& bios);
+
 // Sets up registers the way the BIOS would have left them, so a ROM can be
 // booted without a BIOS image. Enough for the CPU test ROMs used in M2/M3.
 void hleBoot(GbaState& st);
