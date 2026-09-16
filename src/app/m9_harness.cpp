@@ -150,17 +150,33 @@ int main(int argc, char** argv) {
         check(diff == 0, "instance 0's observation matches the CPU reference");
     }
 
-    // The observation must actually contain the picture. Row 1 samples screen
-    // row 6, which the ROM paints solid white, so every sample there must read
-    // full brightness. Checking a known value rather than mere non-uniformity:
-    // an earlier version only asserted "not all the same", and passed or failed
+    // The observation must actually contain the picture. The ROM paints screen
+    // rows 4 to 7 solid white, so whichever observation row samples that band
+    // must read full brightness everywhere.
+    //
+    // The row is computed rather than written down: it depends on the
+    // downsample, and hard-coding it meant this check silently stopped testing
+    // anything when GBA_OBS_SHIFT changed.
+    //
+    // Checking a known value rather than mere non-uniformity also matters: an
+    // earlier version only asserted "not all the same", and passed or failed
     // depending on whether that frame's random input happened to have a
     // non-zero luminance.
     {
+        uint32_t bandRow = OBS_H;
+        for (uint32_t oy = 0; oy < OBS_H; ++oy) {
+            const uint32_t sy = oy * OBS_SCALE + (OBS_SCALE >> 1);
+            if (sy >= 4 && sy <= 7) { bandRow = oy; break; }
+        }
+        check(bandRow < OBS_H, "the white band is reachable at this downsample");
+
         uint32_t wrong = 0;
-        for (uint32_t ox = 0; ox < OBS_W; ++ox)
-            if (obs[1 * OBS_W + ox] != 255) ++wrong;
-        if (wrong) std::printf("    %u/%u samples in the white band are not 255\n", wrong, OBS_W);
+        if (bandRow < OBS_H)
+            for (uint32_t ox = 0; ox < OBS_W; ++ox)
+                if (obs[bandRow * OBS_W + ox] != 255) ++wrong;
+        if (wrong)
+            std::printf("    %u/%u samples in observation row %u are not 255\n", wrong, OBS_W,
+                        bandRow);
         check(wrong == 0, "the observation contains the ROM's white reference band");
     }
 

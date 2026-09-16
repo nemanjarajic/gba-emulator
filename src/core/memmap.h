@@ -41,8 +41,22 @@ KCONST U32 FB_WORDS = (SCREEN_W * SCREEN_H) >> 1u;  // 2 bytes/pixel -> 2 px/wor
 // grayscale, which is what a reinforcement-learning workload actually wants.
 // A full framebuffer is 75 KiB per instance; this is 2.4 KiB, so reading back
 // 4096 of them per frame is 9.6 MiB rather than 300 MiB.
-KCONST U32 OBS_W = SCREEN_W / 4u;   // 60
-KCONST U32 OBS_H = SCREEN_H / 4u;   // 40
+// GBA_OBS_SHIFT picks the downsample: 0 gives the native 240x160, 1 gives
+// 120x80, 2 gives 60x40. Every option divides both screen dimensions exactly,
+// so the aspect ratio is preserved. Set it in CMake with -DGBA_OBS_SHIFT=N; the
+// shader and the host must agree, so it is passed to both from one place.
+//
+// The default is 1. Measured, the observation size costs the emulator nothing
+// at any of these -- throughput is identical because emulation dominates so
+// completely -- so the choice is only about what the network can afford.
+// 120x80 is 9,600 pixels against the 7,056 of the 84x84 that Atari agents use.
+#ifndef GBA_OBS_SHIFT
+#define GBA_OBS_SHIFT 1
+#endif
+
+KCONST U32 OBS_SCALE = 1u << GBA_OBS_SHIFT;
+KCONST U32 OBS_W = SCREEN_W >> GBA_OBS_SHIFT;
+KCONST U32 OBS_H = SCREEN_H >> GBA_OBS_SHIFT;
 KCONST U32 OBS_WORDS = (OBS_W * OBS_H) / 4u;  // four 8-bit samples per word
 
 // Timing. One frame is 228 scanlines of 1232 cycles = 280,896 cycles at

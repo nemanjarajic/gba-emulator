@@ -84,7 +84,7 @@ python3 tools/make_bench_roms.py            # synthetic ROMs for the harness
 ```
 
 The harness is the throughput interface: a distinct controller input per
-instance per frame, a 60x40 grayscale observation read back from every instance
+instance per frame, a 120x80 grayscale observation read back from every instance
 each frame, a probe that gathers one word from the same address in every
 instance (a reward signal, without reading back whole regions), and snapshot
 and restore of machine state.

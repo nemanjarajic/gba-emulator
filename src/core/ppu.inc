@@ -499,7 +499,10 @@ CORE_FN void ppu_render_scanline(INOUT(GbaState) st, U32 y) {
 CORE_FN void ppu_write_observation(INOUT(GbaState) st) {
     NO_UNROLL for (U32 oy = 0u; oy < OBS_H; ++oy) {
         NO_UNROLL for (U32 ox = 0u; ox < OBS_W; ++ox) {
-            U32 pixel = (oy * 4u + 2u) * SCREEN_W + (ox * 4u + 2u);
+            // Sample the middle of each block, which degenerates to the pixel
+            // itself at a scale of one.
+            U32 pixel = (oy * OBS_SCALE + (OBS_SCALE >> 1u)) * SCREEN_W +
+                        (ox * OBS_SCALE + (OBS_SCALE >> 1u));
             U32 colour =
                 (g_fb[MEM_IDX(FB_WORDS, st.inst, pixel >> 1u)] >> ((pixel & 1u) * 16u)) & 0xFFFFu;
 

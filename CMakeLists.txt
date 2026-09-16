@@ -19,6 +19,11 @@ if(HOMEBREW_PREFIX)
   list(APPEND CMAKE_PREFIX_PATH "${HOMEBREW_PREFIX}")
 endif()
 
+# Observation downsample: 2 = 60x40 (default), 1 = 120x80, 0 = native 240x160.
+# The shader and the host must agree, so it is defined once and passed to both.
+set(GBA_OBS_SHIFT 1 CACHE STRING "Observation downsample shift: 0=240x160, 1=120x80, 2=60x40")
+add_compile_definitions(GBA_OBS_SHIFT=${GBA_OBS_SHIFT})
+
 if(MSVC)
   set(GBA_WARNINGS /W3)
 else()
@@ -45,7 +50,7 @@ function(add_compute_shader SRC)
   file(GLOB CORE_DEPS "${CMAKE_SOURCE_DIR}/src/core/*.h" "${CMAKE_SOURCE_DIR}/src/core/*.inc")
   add_custom_command(
     OUTPUT "${OUT}"
-    COMMAND "${GLSLC}" --target-env=vulkan1.2 -O -g -DGBA_GLSL=1
+    COMMAND "${GLSLC}" --target-env=vulkan1.2 -O -g -DGBA_GLSL=1 -DGBA_OBS_SHIFT=${GBA_OBS_SHIFT}
             -I "${CMAKE_SOURCE_DIR}/src/core"
             -o "${OUT}" "${CMAKE_SOURCE_DIR}/${SRC}"
     DEPENDS "${CMAKE_SOURCE_DIR}/${SRC}" ${CORE_DEPS}
