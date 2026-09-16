@@ -1,10 +1,11 @@
 # Running on Windows with an NVIDIA GPU
 
-Everything here is written for that target but **has never been run on it**.
-The portability work is real and reasoned, not verified. This document says
-what to expect, what to check first, and where the risks are.
+Verified on an RTX 5060 Ti (8 GB, driver 596.49) under Windows 11, built with
+MSVC 19.31 and the LunarG Vulkan SDK 1.4.357. Every gate in
+`tools/run_gates.sh` passes, including CPU/GPU byte-identity from M1 through
+M9 and the C API test.
 
-## What is already portable
+## What is portable, and why
 
 - **The shaders need nothing unusual.** `gba.spv` declares exactly one SPIR-V
   capability, `Shader`, the Vulkan 1.0 baseline: no subgroup operations, no
@@ -19,22 +20,37 @@ what to expect, what to check first, and where the risks are.
 - **Buffer allocation tries memory types in order** and falls back to
   device-local plus a staging copy, so it does not depend on unified memory or
   on Resizable BAR. `gpu_check` prints which path it landed in.
-- **`-Wall -Wextra` is only used off MSVC**, which gets `/W3` instead.
+- **A discrete GPU is preferred** over an integrated one, whatever order the
+  driver enumerates them in. `GBA_DEVICE=<index>` picks a device explicitly.
+- **`-Wall -Wextra` is only used off MSVC**, which gets `/W3` instead. MSVC
+  reports `getenv` as deprecated (C4996); that warning is expected.
 
 ## Build
 
-Needs the LunarG Vulkan SDK (for `glslc` and the loader), CMake and a C++20
-compiler. MSVC, clang-cl and MinGW should all work; only AppleClang has been
-used so far.
+Needs:
+
+- The LunarG Vulkan SDK, for `glslc`, the headers and the loader import
+  library. `winget install KhronosGroup.VulkanSDK`.
+- **CMake 3.24 or newer.** The CMake bundled with Visual Studio 2022 17.1 is
+  3.22 and is refused. `winget install Kitware.CMake`.
+- A C++20 compiler. MSVC is what has been used; clang-cl and MinGW are
+  untested.
+
+Build from an "x64 Native Tools Command Prompt for VS 2022" (or after running
+`vcvars64.bat`), with Ninja so the executables land directly in `build\` where
+the gate scripts expect them:
 
 ```
-cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
-cmake --build build --config RelWithDebInfo
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build
 ```
+
+The Visual Studio generator works too, but puts executables in
+`build\RelWithDebInfo\`, which `tools/*.sh` do not look in.
 
 `env.sh` is macOS-only and is not needed: on Windows the loader finds the
-driver and the validation layers through the registry. The `tools/*.sh` scripts
-need Git Bash or WSL; the executables themselves do not.
+driver and the validation layers through the registry. The `tools/*.sh`
+scripts run under Git Bash; the executables themselves do not need it.
 
 ## Run this first
 
@@ -43,40 +59,58 @@ build\gpu_check.exe third_party\gba-tests\arm\arm.gba 4096
 ```
 
 It prints the device, the limits that matter, how many instances fit in each
-configuration, and then measures the two results that came out
-counter-intuitively on Apple Silicon, telling you which way they go on yours:
+configuration, and re-measures the two results that came out
+counter-intuitively on Apple Silicon.
 
-- **The register cliff.** `GbaState` is 83 words, and on an M4 adding four more
-  costs 2.9x throughput because the register allocator spills. NVIDIA has a
-  much larger register file and allows up to 255 registers per thread, so this
-  ceiling will sit somewhere different. If `gpu_check` reports no cliff, the
-  struct has room to grow and the note in `src/core/state.h` can be relaxed.
-- **The memory layout.** The interleaved (structure-of-arrays) layout lost by
-  21-45% on an M4. A discrete GPU's cache hierarchy is different enough that it
-  may win. If it does, build with `GBA_SOA` and re-run the gates.
+On the RTX 5060 Ti:
 
-Then run the gates: `tools/run_gates.sh` under Git Bash, or the executables
-individually.
+| | |
+|---|---|
+| baseline, 4096 instances | **8872 Mcycle/s** |
+| buffer memory | host-mapped device-local (Resizable BAR on) |
+| subgroup size | 32 |
+| `GbaState` + 4 words | 1836 Mcycle/s, **0.21x** |
+| interleaved memory layout | 3805 Mcycle/s, **0.43x** |
+
+Both Apple Silicon findings hold here, and more strongly:
+
+- **The register cliff is real on NVIDIA too.** Four extra words in `GbaState`
+  cost nearly 5x, against 2.9x on an M4. The size assertion in
+  `src/core/state.h` stays.
+- **The interleaved layout loses** by more than half. Keep the default.
+
+## The first run is slow; later runs are not
+
+The first time each distinct pipeline is created, the NVIDIA driver spends
+about **two minutes** compiling it, on the CPU, with the GPU idle. The full
+gate suite took 19 minutes cold, and `gpu_check` 6 minutes, almost all of it
+this.
+
+The driver caches the result on disk (`%LOCALAPPDATA%\NVIDIA\GLCache`), so a
+second run of the same gate takes a second or two. Nothing in this repository
+needs to change for that; an application `VkPipelineCache` would duplicate the
+driver's. But any edit under `src/core/` changes the SPIR-V and pays the
+compile again, so expect it after every core change.
 
 ## Instance counts on 8 GB
 
-Per instance, measured rather than estimated:
+As reported by `gpu_check`:
 
-| configuration | per instance | fits in ~7 GB |
+| configuration | per instance | fits |
 |---|---|---|
-| headless, with save | 518 KB | ~14,200 |
-| headless, no save | 390 KB | ~18,800 |
-| observations + save | 593 KB | ~12,400 |
-| observations, no save | 465 KB | ~15,800 |
+| headless, with save | 525 KB | 13,089 |
+| headless, no save | 397 KB | 16,383 (buffer limit) |
+| observations + save | 600 KB | 11,452 |
+| observations, no save | 472 KB | 14,560 |
 
-Two limits bind before those numbers, and `gpu_check` reports both:
+Two limits bind before memory does:
 
-- **`maxStorageBufferRange`.** EWRAM is 256 KiB per instance, so it reaches
-  4 GiB -- a typical cap -- at 16,384 instances. The pool refuses to allocate
-  past it rather than failing inside Vulkan.
+- **`maxStorageBufferRange`** is 4 GiB. EWRAM is 256 KiB per instance, so it
+  reaches that at 16,384 instances. The pool refuses to allocate past it rather
+  than failing inside Vulkan.
 - **Occupancy.** On an M4 throughput saturated at 4096 instances, well below
-  what memory allowed. Expect the useful maximum on a 5060 to be somewhere
-  around 8,000-12,000 and **sweep it** with `m8_bench` rather than assuming.
+  what memory allowed. The useful maximum here has not been swept yet; do it
+  with `m8_bench` rather than assuming.
 
 ### Reclaiming the save memory
 
@@ -98,12 +132,12 @@ committing to this.
 
 ## Known gaps
 
-- Never compiled or run on Windows or NVIDIA. Treat the first run as a
-  bring-up, not a regression test.
-- The staging path in `uploadBuffer`/`downloadBuffer` has never executed: on
-  Apple Silicon every buffer is host-mapped, so the fallback is untested code.
-  It will be exercised on a discrete card only if Resizable BAR is off.
+- The staging path in `uploadBuffer`/`downloadBuffer` has still never
+  executed: with Resizable BAR on, every buffer is host-mapped here as on Apple
+  Silicon. It would run only on a discrete card with Resizable BAR off.
 - `InstancePool::readProbe` falls back to one small transfer per instance when
   buffers are not mapped, which will be slow for a per-frame reward signal on
   a non-ReBAR system. Worth replacing with a single strided download if that
   path turns out to matter.
+- The throughput sweep (`m8_bench`, `m9_harness` at scale) has not been run on
+  this card, so `docs/performance.md` still describes Apple Silicon only.
