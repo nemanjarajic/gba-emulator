@@ -39,7 +39,7 @@ function(add_compute_shader SRC)
   file(GLOB CORE_DEPS "${CMAKE_SOURCE_DIR}/src/core/*.h" "${CMAKE_SOURCE_DIR}/src/core/*.inc")
   add_custom_command(
     OUTPUT "${OUT}"
-    COMMAND "${GLSLC}" --target-env=vulkan1.2 -O -g
+    COMMAND "${GLSLC}" --target-env=vulkan1.2 -O -g -DGBA_GLSL=1
             -I "${CMAKE_SOURCE_DIR}/src/core"
             -o "${OUT}" "${CMAKE_SOURCE_DIR}/${SRC}"
     DEPENDS "${CMAKE_SOURCE_DIR}/${SRC}" ${CORE_DEPS}
@@ -50,11 +50,17 @@ function(add_compute_shader SRC)
 endfunction()
 
 add_compute_shader(src/shader/square.comp)
+add_compute_shader(src/shader/core_compile_test.comp)
 
 add_custom_target(shaders ALL DEPENDS ${SHADER_OUTPUTS})
 
 # --- library -----------------------------------------------------------------
-add_library(gba_vk STATIC src/gpu/vk_context.cpp)
+# Host-side backing store for the dual-compiled core (C++ build of src/core/).
+add_library(gba_host STATIC src/host/memory.cpp)
+target_include_directories(gba_host PUBLIC src)
+target_compile_options(gba_host PRIVATE -Wall -Wextra)
+
+add_library(gba_vk STATIC src/gpu/vk_context.cpp src/gpu/instance_pool.cpp)
 target_include_directories(gba_vk PUBLIC src)
 target_link_libraries(gba_vk PUBLIC Vulkan::Vulkan)
 target_compile_definitions(gba_vk PUBLIC SHADER_DIR="${SHADER_DIR}")
@@ -64,3 +70,13 @@ target_compile_options(gba_vk PRIVATE -Wall -Wextra -Wno-missing-field-initializ
 add_executable(m0_square src/app/m0_square.cpp)
 target_link_libraries(m0_square PRIVATE gba_vk)
 add_dependencies(m0_square shaders)
+
+add_executable(m1_membus src/app/m1_membus.cpp)
+target_link_libraries(m1_membus PRIVATE gba_host)
+target_compile_options(m1_membus PRIVATE -Wall -Wextra)
+
+# Runs the same core source on both targets and diffs the results.
+add_executable(m1_parity src/app/m1_parity.cpp)
+target_link_libraries(m1_parity PRIVATE gba_host gba_vk)
+add_dependencies(m1_parity shaders)
+target_compile_options(m1_parity PRIVATE -Wall -Wextra)

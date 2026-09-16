@@ -24,7 +24,9 @@ oracle for the GPU core.
 source env.sh          # required: see docs/device-limits.md for why
 cmake -S . -B build -G Ninja
 cmake --build build
-./build/m0_square      # M0 gate
+./build/m0_square      # M0 gate: compute shader round-trip
+./build/m1_membus      # M1 gate: memory bus behaviour (CPU)
+./build/m1_parity      # M1 gate: CPU and GPU builds agree
 ```
 
 `env.sh` sets `VK_DRIVER_FILES`, `VK_LAYER_PATH` and `DYLD_LIBRARY_PATH`.
@@ -45,7 +47,7 @@ is not realistic.
 | | | Status |
 |---|---|---|
 | M0 | Toolchain + compute shader round-trip | **done** |
-| M1 | Core scaffold, memory map, ROM/BIOS loading (CPU) | |
+| M1 | Core scaffold, memory map, dual-compile proven | **done** |
 | M2 | ARM mode interpreter (CPU) — passes `arm.gba` | |
 | M3 | Thumb mode interpreter (CPU) — passes `thumb.gba` | |
 | M4 | Same core on GPU, lockstep-verified against CPU | |
