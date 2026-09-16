@@ -153,6 +153,7 @@ CORE_FN bool io_store_filtered(INOUT(GbaState) st, U32 off, U32 value) {
     // re-assert the flag it was trying to clear.
     if (off == REG_IF) {
         io_set16(st, REG_IF, io_get16(st, REG_IF) & (~(value & 0xFFFFu)));
+        irq_update(st);
         return true;
     }
     // The low three bits of DISPSTAT are status driven by the PPU.
@@ -182,6 +183,8 @@ CORE_FN bool io_store_filtered(INOUT(GbaState) st, U32 off, U32 value) {
 // stored yet. Pokemon Emerald's DMA3 copy does exactly this, and a stale count
 // of zero means "maximum", so 512 words became 65536 and flattened the stack.
 CORE_FN void io_after_store(INOUT(GbaState) st, U32 off, U32 old_value) {
+    if (off == REG_IE) { irq_update(st); return; }
+
     for (U32 ch = 0u; ch < 4u; ++ch) {
         if (off == REG_DMA0SAD + ch * 12u + 10u) {
             if ((io_get16(st, off) & 0x8000u) != 0u && (old_value & 0x8000u) == 0u)
@@ -192,7 +195,10 @@ CORE_FN void io_after_store(INOUT(GbaState) st, U32 off, U32 old_value) {
     for (U32 t = 0u; t < 4u; ++t) {
         if (off == REG_TM0CNT_L + t * 4u + 2u) {
             // Enabling a timer reloads its counter; leaving it enabled does not.
-            if ((io_get16(st, off) & 0x0080u) != 0u && (old_value & 0x0080u) == 0u) {
+            U32 now = io_get16(st, off);
+            if ((now & 0x0080u) != 0u) st.timer_active = st.timer_active | (1u << t);
+            else                       st.timer_active = st.timer_active & (~(1u << t));
+            if ((now & 0x0080u) != 0u && (old_value & 0x0080u) == 0u) {
                 st.timer_counter[t] = st.timer_reload[t];
                 st.timer_prescale[t] = 0u;
             }
@@ -236,8 +242,16 @@ CORE_FN U32 bus_read_word_aligned(INOUT(GbaState) st, U32 addr) {
             return g_iwram[MEM_IDX(IWRAM_WORDS, st.inst, (a & IWRAM_MASK) >> 2u)];
         case 0x04u: {
             U32 off = a & 0x00FFFFFFu;
-            if (off >= IO_SIZE) return st.open_bus;  // M7: 0x04xx0800 mirror
-            return g_io[MEM_IDX(IO_WORDS, st.inst, off >> 2u)];
+            if (off >= IO_SIZE) return st.open_bus;  // 0x04xx0800 mirror
+            U32 w = g_io[MEM_IDX(IO_WORDS, st.inst, off >> 2u)];
+            // A timer's live counter lives in the state struct rather than the
+            // I/O array, so it is substituted on read. Each timer's counter and
+            // control register share one word, counter in the low half.
+            if (off >= REG_TM0CNT_L && off < REG_TM0CNT_L + 16u) {
+                U32 t = (off - REG_TM0CNT_L) >> 2u;
+                w = (w & 0xFFFF0000u) | (st.timer_counter[t] & 0xFFFFu);
+            }
+            return w;
         }
         case 0x05u:
             return g_pram[MEM_IDX(PRAM_WORDS, st.inst, (a & PRAM_MASK) >> 2u)];

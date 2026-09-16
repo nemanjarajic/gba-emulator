@@ -346,7 +346,7 @@ CORE_FN void arm_block_transfer(INOUT(GbaState) st, U32 op) {
         // Writeback happens before the loads, so a base register that is also
         // in the list ends up holding the loaded value.
         if (writeback) st.r[rn] = final_base;
-        for (U32 i = 0u; i < 16u; ++i) {
+        NO_UNROLL for (U32 i = 0u; i < 16u; ++i) {
             if ((list & (1u << i)) == 0u) continue;
             U32 value = bus_read32(st, addr);
             if (user_bank) arm_write_user_reg(st, i, value);
@@ -362,7 +362,7 @@ CORE_FN void arm_block_transfer(INOUT(GbaState) st, U32 op) {
         bool base_is_lowest = (lowest == (1u << rn));
         if (writeback && !base_is_lowest) st.r[rn] = final_base;
 
-        for (U32 i = 0u; i < 16u; ++i) {
+        NO_UNROLL for (U32 i = 0u; i < 16u; ++i) {
             if ((list & (1u << i)) == 0u) continue;
             U32 value = user_bank ? arm_read_user_reg(st, i) : arm_stored_reg(st, i);
             bus_write32(st, addr, value);

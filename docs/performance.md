@@ -1,68 +1,175 @@
-# Measured throughput (M4)
+# Measured throughput
 
-Apple M4, 10 GPU cores, MoltenVK. Running `arm.gba` to completion (203,196
-cycles) on every instance simultaneously. **No M8 optimisation yet**: still the
-array-of-structures memory layout, so nothing coalesces.
+Apple M4, 10 GPU cores, MoltenVK. Reproduce with `./build/m8_bench <rom>
+[cycles] [render|norender]`, plus the `ONLY`, `DISPATCH`, `DIVERGE` and
+`SHADER` environment variables described below.
 
-Reproduce with `./build/m4_gpu_test third_party/gba-tests/arm/arm.gba <N>`.
+## Scaling with instance count
 
-| instances | Mcycle/s | MHz/instance | × realtime | × one CPU core |
+`arm.gba`, 2,000,000 cycles per instance, rendering off, array-of-structures
+layout. CPU baseline **105 Mcycle/s on one core** (6.3x realtime).
+
+| instances | agg Mcycle/s | MHz/instance | × realtime | × one CPU core |
 |---|---|---|---|---|
-| 1 | 1.1 | 1.09 | 0.07 | 0.01 |
-| 64 | 70.1 | 1.09 | 4 | 0.5 |
-| 256 | 256.6 | 1.00 | 15 | 1.4 |
-| 1024 | 1110.5 | 1.08 | 66 | 6.7 |
-| 2048 | 2183.7 | 1.07 | 130 | 11.8 |
-| 4096 | 3931.8 | 0.96 | 234 | 20.9 |
-| 8192 | 4037.6 | 0.49 | 241 | 21.7 |
+| 1 | 0.4 | 0.39 | 0.02 | 0.004 |
+| 32 | 12.4 | 0.39 | 1 | 0.1 |
+| 256 | 98.7 | 0.39 | 6 | 0.9 |
+| 1024 | 394.6 | 0.39 | 24 | 3.8 |
+| 2048 | 729.8 | 0.36 | 43 | 6.9 |
+| 4096 | **1074.1** | 0.26 | 64 | **10.2** |
+| 8192 | 973.9 | 0.12 | 58 | 9.3 |
 
-CPU baseline: **146 Mcycle/s on one core**, about 9× realtime.
+Pokemon Emerald, same conditions: 319 Mcycle/s at 1024, **812 at 4096**, 792 at
+8192 — about 25% below the synthetic ROM, which is the honest figure to quote
+for a real workload.
 
-## What this says
+Scaling is linear to ~2048 and saturates at 4096. Past that the extra instances
+are queued rather than run: 8192 is slower in aggregate *and* halves the
+per-instance clock. **4096 is the useful maximum on this machine**, a
+scheduling limit rather than a memory one — 8192 instances still fit the
+budget comfortably.
 
-- **Scaling is essentially linear to 4096 instances.** Per-instance clock holds
-  at roughly 1.0-1.09 MHz the whole way, so nothing is contended yet.
-- **8192 instances is past the cliff.** Aggregate throughput barely moves
-  (3932 → 4038) while per-instance clock halves. That is the occupancy ceiling
-  of a 10-core M4: the extra instances are queued, not running. 4096 is the
-  useful maximum on this machine, and it is a scheduling limit, not the memory
-  limit — 8192 instances still fit comfortably in the 10.7 GiB budget.
-- **Break-even against one CPU core is around 200 instances.** Below that the
-  GPU is simply slower, which is the expected shape for this design.
-- **The best real number is ~21× one CPU core** at 4096 instances.
+Break-even against a single CPU core is around 300 instances.
 
-## Against the plan's predictions
+## The interleaved layout is slower, not faster
 
-The plan committed to specific numbers before any code existed. Scoring them:
+The plan predicted that switching `MEM_IDX` from contiguous-per-instance
+(array-of-structures) to interleaved (structure-of-arrays) would be "the single
+largest performance change in the project", because 32 lanes of a SIMD group
+touching addresses 256 KiB apart can never share a cache line.
 
-| Prediction | Actual | |
+**Measured, it is 21-45% slower.** Both layouts are built (`gba.spv` and
+`gba_soa.spv`) so this can be re-checked: `SHADER=gba_soa ./build/m8_bench ...`.
+
+| instances | AoS | SoA | |
+|---|---|---|---|
+| arm.gba 4096 | 1074 | 595 | −45% |
+| arm.gba 8192 | 974 | 673 | −31% |
+| Emerald 4096 | 812 | 644 | −21% |
+| Emerald 8192 | 792 | 647 | −18% |
+
+This is not a case of the benefit failing to appear. Every instance here runs
+the same ROM from the same state with no input, so the lanes are in *perfect*
+lockstep and all access the same word index — exactly the condition under which
+interleaving should coalesce best. It still loses, which makes the result
+stronger rather than weaker.
+
+Two plausible reasons, in order of confidence:
+
+1. **Address arithmetic.** The contiguous form is `inst * words + w`, whose
+   first term is loop-invariant and gets hoisted once per dispatch. The
+   interleaved form is `w * g_num_instances + inst`, a multiply by a runtime
+   value on *every* access.
+2. **Locality.** Apple Silicon's unified memory and large caches suit the
+   contiguous pattern, where an instance's small working set stays resident.
+   Interleaving scatters each instance's bytes across the whole buffer.
+
+The contiguous layout stays the default. The macro remains the single point of
+change, so this is easy to revisit on a discrete GPU, where the cache hierarchy
+is different enough that the answer may well flip.
+
+## Divergence costs nothing until the *decoder* diverges
+
+The plan assumed divergence would be the dominant cost. It depends entirely on
+what diverges. Both experiments use a ROM whose instances are steered down 32 equal-cost paths
+by a per-instance seed (`DIVERGE=<paths>`), at 4096 instances. Generate the
+ROMs with `python3 tools/make_bench_roms.py`.
+
+**Different data, same instruction types** — `diverge.gba`, all paths built
+from the same opcodes:
+
+| distinct paths | Mcycle/s | |
 |---|---|---|
-| 0.5-2 MHz per instance | 0.96-1.09 MHz | correct |
-| 2-8 Gcycle/s aggregate at 4096 | 3.9 Gcycle/s | correct |
-| 120-480× realtime | 234× | correct |
-| 10-40× one CPU core | 21× | correct |
-| One CPU core is 10-20× realtime | 9× | **too optimistic** |
-| Single instance 20-50× slower than a CPU | ~135× slower | **badly underestimated** |
+| 1 | 862 | 100% |
+| 4 | 868 | 101% |
+| 16 | 873 | 101% |
+| 32 | 876 | 102% |
 
-The two misses are the same miss: the C++ reference interpreter is much faster
-than assumed (146 Mcycle/s, ~9× realtime), so the per-instance gap to the GPU is
-far wider than predicted. The aggregate conclusions were unaffected, because
-they were derived from the GPU side, which was estimated correctly.
+Free. Within noise of lockstep even when all 32 lanes of a SIMD group take
+different paths.
 
-The practical lesson stands and is now measured rather than asserted: **never
-run a single instance on the GPU.** Use the C++ core for anything interactive.
+**Different instruction classes** — `diverge2.gba`, where each path uses a
+different kind of ARM instruction (data-processing, multiply, load, store,
+halfword load, block transfer, shifted register), forcing the interpreter's
+decode switch onto different branches:
 
-## What M8 should attack
+| distinct classes | Mcycle/s | |
+|---|---|---|
+| 1 | 873 | 100% |
+| 2 | 727 | 83% |
+| 4 | 537 | 62% |
+| 8 | 478 | **55%** |
 
-In the order the plan already sets out:
+A repeat run of the endpoints gave 873 and 425, so the 8-class figure sits
+around 49-55% depending on the run. The shape is not in doubt; the exact number
+is worth about two significant figures.
 
-1. **Interleaved SoA addressing** in `MEM_IDX`. Right now 32 lanes of a SIMD
-   group touch addresses 256 KiB apart, so no two share a cache line. This is
-   untested and expected to be the largest single gain.
-2. **Divergence measurement.** Every instance here runs the same ROM from the
-   same state with no input, so they stay in near-perfect lockstep — this table
-   is close to a best case. Real workloads with differing input sequences will
-   diverge over a rollout, and the cost of that needs measuring before any
-   claim about RL throughput is credible.
-3. **Cycles per dispatch.** 16384 is used here with 13 dispatches; the tradeoff
-   against the macOS GPU watchdog has not been swept.
+So the cost is not lanes holding different *data*, it is lanes executing
+different *emulator code*. That has a direct consequence for the intended use:
+instances running the same game with different inputs stay aligned on
+instruction type most of the time, which is the cheap case. It also means the
+Emerald numbers above already include realistic decoder divergence, since a
+real instruction stream mixes classes constantly.
+
+Note the curve flattens rather than collapsing: 8 classes costs 45%, not the
+87% that full serialisation would imply.
+
+## Cycles per dispatch is not a tuning lever
+
+4096 instances, `arm.gba`:
+
+| cycles/dispatch | dispatches | Mcycle/s |
+|---|---|---|
+| 4,096 | 488 | 1049 |
+| 16,384 | 122 | 1070 |
+| 65,536 | 30 | 1081 |
+| 262,144 | 7 | 1084 |
+| 1,048,576 | 2 | 1079 |
+| 4,194,304 | 1 | 1074 |
+
+Flat across three orders of magnitude, so per-dispatch overhead is negligible
+even at 488 dispatches. Nothing approached the macOS GPU watchdog, including a
+single dispatch covering the whole run. 262,144 is kept as the default for
+headroom, not for speed.
+
+**One caveat:** runs occasionally stall, taking ~130x longer (8 Mcycle/s
+instead of 1080) with no change in configuration. It reproduced once at 65,536
+cycles/dispatch and then did not on a retry of the identical command, so it is
+intermittent and *not* a property of the dispatch size. The leading hypothesis
+is host memory pressure — a 4096-instance pool is ~2.1 GB and the benchmark
+allocates and frees one per configuration. Worth re-checking before trusting
+any single measurement.
+
+## Hot-path work that did pay off
+
+M7 cost about 3x, because the scheduler now runs after every instruction.
+Two fixes recovered a large part of it:
+
+- **Timer early-out.** `timer_tick` read four control registers per instruction
+  just to discover nothing was enabled. A cached `timer_active` bitmask makes
+  the common case free, and the live counter now lives in the state struct with
+  the bus read substituting it, instead of being written back to I/O memory
+  every cycle.
+- **Cached interrupt flag.** `irq_check` runs between every pair of
+  instructions and was loading IE/IF from I/O — one uncoalesced access per
+  instruction. `irq_ready` is now maintained wherever IE or IF changes.
+
+Together: CPU 77.6 → 105.2 Mcycle/s (+35%), GPU at 4096 862 → 1074 (+25%).
+
+## Two hypotheses that were wrong
+
+Recorded because the measurements cost real time and the conclusions are not
+obvious:
+
+- **The sprite scanline buffer is not the problem.** `ppu_render_scanline`
+  holds a 240-word `obj_line` array, ~960 bytes of private memory per thread,
+  which looked like an obvious occupancy killer. Compiling it out entirely
+  changed throughput by 2% (1059 vs 1079).
+- **Loop unrolling is not what makes the kernel huge.** The kernel is 2.15 MB
+  of SPIR-V stripped of debug info, against 2.7 KB for a trivial shader, and
+  `-O` unrolling the 240-pixel and 128-sprite loops seemed the likely cause.
+  Annotating every large loop with `[[dont_unroll]]` changed the size by zero
+  bytes. The size comes from the ARM and Thumb decoders themselves being
+  inlined into one enormous function. Whether that exceeds the instruction
+  cache is still untested, and remains the most likely explanation for the gap
+  between these numbers and the M4-era 1.09 MHz per instance.

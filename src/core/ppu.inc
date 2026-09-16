@@ -323,7 +323,7 @@ CORE_FN void ppu_render_scanline(INOUT(GbaState) st, U32 y) {
 
     // Forced blank drives the display white regardless of anything else.
     if ((dispcnt & 0x0080u) != 0u) {
-        for (U32 x = 0u; x < SCREEN_W; ++x) fb_write(st, x, y, 0x7FFFu);
+        NO_UNROLL for (U32 x = 0u; x < SCREEN_W; ++x) fb_write(st, x, y, 0x7FFFu);
         return;
     }
 
@@ -334,10 +334,10 @@ CORE_FN void ppu_render_scanline(INOUT(GbaState) st, U32 y) {
     // last to first so that a lower-numbered object ends up on top, which is
     // the hardware's tie-break.
     U32 obj_line[240];
-    for (U32 x = 0u; x < SCREEN_W; ++x) obj_line[x] = 0u;
+    NO_UNROLL for (U32 x = 0u; x < SCREEN_W; ++x) obj_line[x] = 0u;
 
     if ((dispcnt & 0x1000u) != 0u) {
-        for (U32 n = 0u; n < 128u; ++n) {
+        NO_UNROLL for (U32 n = 0u; n < 128u; ++n) {
             U32 i = 127u - n;
             U32 attr0 = oam_read16_raw(st, i * 8u + 0u);
             U32 attr1 = oam_read16_raw(st, i * 8u + 2u);
@@ -378,7 +378,7 @@ CORE_FN void ppu_render_scanline(INOUT(GbaState) st, U32 y) {
                 pd = I32(sign_extend(oam_read16_raw(st, m * 32u + 0x1Eu), 16u));
             }
 
-            for (U32 px = 0u; px < box_w; ++px) {
+            NO_UNROLL for (U32 px = 0u; px < box_w; ++px) {
                 I32 sx = ox + I32(px);
                 if (sx < 0 || sx >= I32(SCREEN_W)) continue;
 
@@ -423,7 +423,7 @@ CORE_FN void ppu_render_scanline(INOUT(GbaState) st, U32 y) {
     U32 evb = umin(16u, (bldalpha >> 8u) & 0x1Fu);
     U32 evy = umin(16u, io_read16_raw(st, 0x54u) & 0x1Fu);
 
-    for (U32 x = 0u; x < SCREEN_W; ++x) {
+    NO_UNROLL for (U32 x = 0u; x < SCREEN_W; ++x) {
         U32 obj = obj_line[x];
         U32 mask = window_mask(st, dispcnt, x, y, (obj & OBJ_WINDOW) != 0u);
 
@@ -432,7 +432,7 @@ CORE_FN void ppu_render_scanline(INOUT(GbaState) st, U32 y) {
         // many tile lookups.
         U32 bg_pixel[4];
         U32 bg_prio[4];
-        for (U32 b = 0u; b < 4u; ++b) {
+        NO_UNROLL for (U32 b = 0u; b < 4u; ++b) {
             bg_pixel[b] = 0u;
             bg_prio[b] = 4u;
             if ((dispcnt & (0x0100u << b)) == 0u) continue;  // layer disabled

@@ -52,6 +52,7 @@ endfunction()
 add_compute_shader(src/shader/square.comp)
 add_compute_shader(src/shader/core_compile_test.comp)
 add_compute_shader(src/shader/gba.comp)
+add_compute_shader(src/shader/gba_soa.comp)
 
 add_custom_target(shaders ALL DEPENDS ${SHADER_OUTPUTS})
 
@@ -101,6 +102,11 @@ add_executable(m6_effects src/app/m6_effects.cpp)
 target_link_libraries(m6_effects PRIVATE gba_host gba_vk)
 add_dependencies(m6_effects shaders)
 target_compile_options(m6_effects PRIVATE -Wall -Wextra)
+
+add_executable(m8_bench src/app/m8_bench.cpp)
+target_link_libraries(m8_bench PRIVATE gba_host gba_vk)
+add_dependencies(m8_bench shaders)
+target_compile_options(m8_bench PRIVATE -Wall -Wextra)
 
 # Renders any ROM on both targets, compares, and writes a PNG.
 add_executable(render_rom src/app/render_rom.cpp)

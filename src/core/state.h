@@ -60,6 +60,12 @@ struct GbaState {
     // two cannot share the I/O word.
     U32 timer_counter[4];
     U32 timer_reload[4];
+    U32 timer_active;  // bitmask of enabled timers, so the common case exits early
+
+    // Cached (IE & IF) != 0. The interrupt check runs between every pair of
+    // instructions, and reading the I/O registers there cost an uncoalesced
+    // memory access per instruction on the GPU.
+    U32 irq_ready;
     U32 timer_prescale[4];  // cycles accumulated towards the next increment
 
     // --- save media --------------------------------------------------------
@@ -147,22 +153,31 @@ KCONST U32 FLAG_RENDER = 1u;
 
 // Index of word `w` of instance `inst` in a region `words_per_inst` long.
 //
-// M4-M7 use this array-of-structures form: each instance's region is
-// contiguous. It is simple and cache-hostile -- 32 lanes of a SIMD group touch
-// 32 addresses 256 KiB apart, so no two share a cache line.
+// Two layouts, selected at build time by GBA_SOA:
 //
-// M8 replaces the body with the interleaved form
-//     ((w) * g_num_instances + (inst))
-// so lanes hit consecutive words and coalesce. Every memory access in the
-// emulator goes through this macro precisely so that is a one-line change.
+//   array-of-structures (default): each instance's region is contiguous.
+//     Simple, and cache-hostile -- 32 lanes of a SIMD group touch 32 addresses
+//     256 KiB apart, so no two ever share a cache line.
+//
+//   interleaved (GBA_SOA): word w of every instance is stored together.
+//     Lanes that are executing the same instruction touch consecutive words and
+//     coalesce into one transaction.
+//
+// Every memory access in the emulator goes through this macro, which is what
+// makes the choice a one-line change. Host code must use the helpers in
+// InstancePool rather than assuming an instance owns a contiguous slice.
+#ifdef GBA_SOA
+#define MEM_IDX(words_per_inst, inst, w) ((w) * g_num_instances + (inst))
+#else
 #define MEM_IDX(words_per_inst, inst, w) ((inst) * (words_per_inst) + (w))
+#endif
 
 #ifndef GBA_GLSL
 // GbaState is copied verbatim between host memory and a std430 storage buffer,
 // so its C++ layout must match what GLSL sees. Every member being a U32 or an
 // array of U32 makes that true (std430 gives both a 4-byte stride); this
 // catches a member of any other type being added later.
-static_assert(sizeof(GbaState) == 81u * 4u, "GbaState must stay std430-compatible");
+static_assert(sizeof(GbaState) == 83u * 4u, "GbaState must stay std430-compatible");
 #endif
 
 #endif  // GBA_CORE_STATE_H

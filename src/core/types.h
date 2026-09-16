@@ -28,6 +28,16 @@
 
 #ifdef GBA_GLSL
 
+#extension GL_EXT_control_flow_attributes : enable
+
+// Marks a loop the shader compiler must not unroll.
+//
+// glslc's -O unrolls every loop with a constant bound, and the PPU has loops of
+// 240 pixels and 128 sprites with substantial bodies. Unrolled, the kernel
+// reached 2.15 MB of SPIR-V -- far beyond any GPU instruction cache, so the
+// hot inner loop was being streamed from memory on every iteration.
+#define NO_UNROLL [[dont_unroll]]
+
 #define U32 uint
 #define I32 int
 #define INOUT(T) inout T
@@ -38,6 +48,8 @@
 #else  // ---- C++ ----
 
 #include <cstdint>
+
+#define NO_UNROLL
 
 #define U32 uint32_t
 #define I32 int32_t

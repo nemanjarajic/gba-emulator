@@ -33,7 +33,7 @@ CORE_FN void dma_run(INOUT(GbaState) st, U32 trigger) {
         U32 dst = st.dma_dst[ch];
         U32 n = st.dma_count[ch];
 
-        for (U32 i = 0u; i < n; ++i) {
+        NO_UNROLL for (U32 i = 0u; i < n; ++i) {
             if (word) bus_write32(st, dst, bus_read32(st, src));
             else      bus_write16(st, dst, bus_read16(st, src));
             if (src_ctl == 0u) src = src + step;

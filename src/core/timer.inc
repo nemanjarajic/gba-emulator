@@ -11,6 +11,12 @@
 // timer other than timer 0 may instead count the overflows of the one below it.
 
 CORE_FN void timer_tick(INOUT(GbaState) st, U32 cycles) {
+    // Called once per emulated instruction, so the case where nothing is
+    // running has to cost nothing. Reading four control registers to discover
+    // that was four uncoalesced memory accesses per instruction, and it
+    // dominated the whole emulator.
+    if (st.timer_active == 0u) return;
+
     U32 previous_overflows = 0u;
 
     for (U32 t = 0u; t < 4u; ++t) {
@@ -44,7 +50,9 @@ CORE_FN void timer_tick(INOUT(GbaState) st, U32 cycles) {
             value = st.timer_reload[t] + (excess % span);
         }
         st.timer_counter[t] = value & 0xFFFFu;
-        io_set16(st, base, st.timer_counter[t]);  // so reads see the live count
+        // The counter is NOT written back to the I/O array here; the bus read
+        // path substitutes it. Storing it every cycle was a memory write per
+        // timer per instruction.
 
         if (overflows != 0u && (ctrl & 0x0040u) != 0u) irq_raise(st, IRQ_TIMER0 << t);
         previous_overflows = overflows;

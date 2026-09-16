@@ -102,7 +102,7 @@ CORE_FN void bios_cpu_set(INOUT(GbaState) st, bool fast) {
         src = src & 0xFFFFFFFCu;
         dst = dst & 0xFFFFFFFCu;
         U32 value = bus_read32(st, src);
-        for (U32 i = 0u; i < count; ++i) {
+        NO_UNROLL for (U32 i = 0u; i < count; ++i) {
             if (!fill) value = bus_read32(st, src + i * 4u);
             bus_write32(st, dst + i * 4u, value);
         }
@@ -110,7 +110,7 @@ CORE_FN void bios_cpu_set(INOUT(GbaState) st, bool fast) {
         src = src & 0xFFFFFFFEu;
         dst = dst & 0xFFFFFFFEu;
         U32 value = bus_read16(st, src);
-        for (U32 i = 0u; i < count; ++i) {
+        NO_UNROLL for (U32 i = 0u; i < count; ++i) {
             if (!fill) value = bus_read16(st, src + i * 2u);
             bus_write16(st, dst + i * 2u, value);
         }
@@ -150,7 +150,7 @@ CORE_FN void bios_lz77(INOUT(GbaState) st) {
     U32 remaining = header >> 8u;
     src = src + 4u;
 
-    while (remaining > 0u) {
+    NO_UNROLL while (remaining > 0u) {
         U32 flags = bus_read8(st, src);
         src = src + 1u;
         for (U32 bit = 0u; bit < 8u && remaining > 0u; ++bit) {
@@ -184,7 +184,7 @@ CORE_FN void bios_rle(INOUT(GbaState) st) {
     U32 remaining = bus_read32(st, src) >> 8u;
     src = src + 4u;
 
-    while (remaining > 0u) {
+    NO_UNROLL while (remaining > 0u) {
         U32 flag = bus_read8(st, src);
         src = src + 1u;
         if ((flag & 0x80u) != 0u) {
@@ -226,7 +226,7 @@ CORE_FN void bios_huffman(INOUT(GbaState) st) {
     U32 out_byte = 0u;
     U32 out_bits = 0u;
 
-    while (remaining > 0u) {
+    NO_UNROLL while (remaining > 0u) {
         U32 word = bus_read32(st, stream);
         stream = stream + 4u;
         for (U32 bit = 0u; bit < 32u && remaining > 0u; ++bit) {
@@ -277,7 +277,7 @@ CORE_FN void bios_bit_unpack(INOUT(GbaState) st) {
     U32 bits = 0u;
     U32 src_mask = (1u << src_width) - 1u;
 
-    for (U32 i = 0u; i < src_len; ++i) {
+    NO_UNROLL for (U32 i = 0u; i < src_len; ++i) {
         U32 byte = bus_read8(st, src + i);
         for (U32 s = 0u; s < 8u; s = s + src_width) {
             U32 value = (byte >> s) & src_mask;

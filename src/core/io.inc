@@ -46,13 +46,21 @@ CORE_FN U32 io_get32(INOUT(GbaState) st, U32 off) {
     return g_io[MEM_IDX(IO_WORDS, st.inst, (off & IO_MASK) >> 2u)];
 }
 
+// Recomputes the cached "an enabled interrupt is pending" flag. Must be called
+// wherever IE or IF changes.
+CORE_FN void irq_update(INOUT(GbaState) st) {
+    U32 ie_if = io_get32(st, REG_IE);  // IE in the low half, IF in the high half
+    st.irq_ready = (((ie_if & 0xFFFFu) & (ie_if >> 16u)) != 0u) ? 1u : 0u;
+}
+
 // Raises an interrupt source. The CPU only takes it if IME and IE allow and
 // the CPSR I bit is clear; until then it sits in IF.
 CORE_FN void irq_raise(INOUT(GbaState) st, U32 source) {
     io_set16(st, REG_IF, io_get16(st, REG_IF) | source);
+    irq_update(st);
     // A pending, enabled interrupt wakes the CPU from HALT even when IME is
     // clear -- that is how the BIOS IntrWait calls work.
-    if ((io_get16(st, REG_IE) & source) != 0u) st.halted = 0u;
+    if (st.irq_ready != 0u) st.halted = 0u;
 }
 
 #endif  // GBA_CORE_IO_INC

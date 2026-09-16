@@ -58,7 +58,9 @@ CORE_FN void scheduler_tick(INOUT(GbaState) st, U32 cycles) {
 
 // Takes a pending interrupt if one is enabled and not masked.
 CORE_FN void irq_check(INOUT(GbaState) st) {
-    if ((io_get16(st, REG_IE) & io_get16(st, REG_IF)) == 0u) return;
+    // Cached rather than read from I/O: this runs between every pair of
+    // instructions, and the load was one uncoalesced access per instruction.
+    if (st.irq_ready == 0u) return;
 
     // An enabled interrupt wakes the CPU from HALT even when IME is clear.
     // That is what makes the BIOS IntrWait calls terminate.

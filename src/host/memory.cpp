@@ -118,6 +118,12 @@ void hleBoot(GbaState& st) {
     st.scanline = 0u;
     st.line_cycle = 0u;
     st.dma_enabled = 0u;
+    st.timer_active = 0u;
+    st.irq_ready = 0u;
+    st.flash_phase = 0u;
+    st.flash_id_mode = 0u;
+    st.flash_bank = 0u;
+    st.flash_erase = 0u;
     for (U32 i = 0u; i < 4u; ++i) {
         st.dma_src[i] = 0u;
         st.dma_dst[i] = 0u;

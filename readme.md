@@ -40,9 +40,10 @@ cmake --build build
 ./tools/run_gates.sh       # everything at once
 ```
 
-`m4_gpu_test <rom> <instances>` also reports throughput. See
-`docs/performance.md` for the scaling curve: ~21x one CPU core at 4096
-instances, saturating at 8192.
+`./build/m8_bench <rom> [cycles] [render|norender]` measures throughput against
+instance count. See `docs/performance.md` for the full results: ~10x one CPU
+core at 4096 instances, and two of the plan's performance predictions measured
+and refuted.
 
 Test ROMs are not vendored; run `./tools/fetch_test_roms.sh` once to clone
 `jsmolka/gba-tests` into `third_party/`.
@@ -133,7 +134,7 @@ They were implemented and gated together.
 | M5 | PPU bitmap modes 3/4/5 — first pixels | **done** |
 | M6 | Tiled modes, sprites, windows, blending | **done** |
 | M7 | DMA, timers, interrupts, BIOS, Flash saves | **mostly** |
-| M8 | Scale out; measure divergence and memory layout | |
+| M8 | Scale out; measure divergence and memory layout | **done** |
 | M9 | Throughput harness | |
 
 See `docs/device-limits.md` for measured hardware limits and the instance-count
