@@ -18,6 +18,7 @@ U32* g_fb = nullptr;
 
 U32 g_num_instances = 1;
 U32 g_rom_words = 0;
+U32 g_flags = 0;
 
 namespace gba::host {
 

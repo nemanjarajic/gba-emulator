@@ -57,7 +57,7 @@ add_custom_target(shaders ALL DEPENDS ${SHADER_OUTPUTS})
 
 # --- library -----------------------------------------------------------------
 # Host-side backing store for the dual-compiled core (C++ build of src/core/).
-add_library(gba_host STATIC src/host/memory.cpp)
+add_library(gba_host STATIC src/host/memory.cpp src/host/png.cpp)
 target_include_directories(gba_host PUBLIC src)
 target_compile_options(gba_host PRIVATE -Wall -Wextra)
 
@@ -86,6 +86,11 @@ add_executable(m4_gpu_test src/app/m4_gpu_test.cpp)
 target_link_libraries(m4_gpu_test PRIVATE gba_host gba_vk)
 add_dependencies(m4_gpu_test shaders)
 target_compile_options(m4_gpu_test PRIVATE -Wall -Wextra)
+
+add_executable(m5_ppu src/app/m5_ppu.cpp)
+target_link_libraries(m5_ppu PRIVATE gba_host gba_vk)
+add_dependencies(m5_ppu shaders)
+target_compile_options(m5_ppu PRIVATE -Wall -Wextra)
 
 # Runs the same core source on both targets and diffs the results.
 add_executable(m1_parity src/app/m1_parity.cpp)

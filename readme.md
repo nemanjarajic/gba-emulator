@@ -33,6 +33,8 @@ cmake --build build
 ./build/m1_parity      # M1 gate: CPU and GPU builds agree
 ./tools/run_cpu_tests.sh   # M2/M3 gate: jsmolka CPU test ROMs
 ./build/m4_gpu_test        # M4 gate: same ROM inside the compute shader
+./build/m5_ppu             # M5 gate: bitmap modes, writes mode{3,4,5}.png
+./tools/run_gates.sh       # everything at once
 ```
 
 `m4_gpu_test <rom> <instances>` also reports throughput. See
@@ -59,6 +61,18 @@ same ROM on both builds in lockstep and the first register mismatch names the
 exact broken opcode. Debugging a shader-resident ARM7TDMI without that oracle
 is not realistic.
 
+## A note on M5's test ROMs
+
+jsmolka's `ppu/` ROMs all set BG0CNT: they are tiled-mode tests and belong to
+M6. The suite has no bitmap-mode ROM, so `m5_ppu` hand-assembles three small
+ones (in `src/app/m5_ppu.cpp`) that draw index-derived patterns in modes 3, 4
+and 5. They are real ARM machine code run by the emulator rather than
+host-poked memory, since the milestone is about a ROM drawing something.
+
+The mode 4 ROM writes pixels a halfword at a time. Writing them individually
+with `STRB` does not work on hardware — an 8-bit write to VRAM is doubled
+across the containing halfword, so each store clobbers its neighbour.
+
 ## A note on M2 and M3
 
 The plan treated the ARM and Thumb interpreters as separable milestones. They
@@ -75,7 +89,7 @@ They were implemented and gated together.
 | M2 | ARM interpreter — passes `arm.gba` | **done** |
 | M3 | Thumb interpreter — passes `thumb.gba`, `memory.gba` | **done** |
 | M4 | Same core on GPU, verified against CPU | **done** |
-| M5 | PPU bitmap modes — first pixels | |
+| M5 | PPU bitmap modes 3/4/5 — first pixels | **done** |
 | M6 | Tiled modes and sprites | |
 | M7 | DMA, timers, interrupts, input | |
 | M8 | Scale out; measure divergence and memory layout | |

@@ -5,20 +5,21 @@
 #include "thumb.inc"
 #include "bus.inc"
 #include "cpu.inc"
+#include "ppu.inc"
 #include "state.h"
 #include "types.h"
 
-// Scanline timing.
+// Scanline timing, and the point at which lines are drawn.
 //
-// This is not the PPU -- nothing is rendered yet. It maintains just VCOUNT and
-// the DISPSTAT VBlank/HBlank flags, which is the minimum that lets a ROM's
-// "wait for vblank" loop terminate. Without it the CPU test ROMs spin forever
-// in m_vsync after finishing, and never publish their verdict. M5 extends this
-// into the real renderer.
+// A visible line is rendered as it ends, so it reflects the register and memory
+// state the CPU left at that moment. Drawing at end-of-line rather than
+// per-pixel is the scanline granularity the plan chose.
 CORE_FN void ppu_tick(INOUT(GbaState) st, U32 cycles) {
     st.line_cycle = st.line_cycle + cycles;
     while (st.line_cycle >= CYCLES_PER_SCANLINE) {
         st.line_cycle = st.line_cycle - CYCLES_PER_SCANLINE;
+        if (st.scanline < SCREEN_H && (g_flags & FLAG_RENDER) != 0u)
+            ppu_render_scanline(st, st.scanline);
         st.scanline = st.scanline + 1u;
         if (st.scanline >= SCANLINES_PER_FRAME) st.scanline = 0u;
     }

@@ -92,6 +92,7 @@ layout(push_constant) uniform PushBlock {
 #define g_num_instances pc.g_num_instances
 #define g_rom_words     pc.g_rom_words
 #define g_cycles        pc.g_cycles
+#define g_flags         pc.g_flags
 
 #else  // ---- C++ ----
 
@@ -108,8 +109,16 @@ extern U32* g_fb;
 
 extern U32 g_num_instances;
 extern U32 g_rom_words;
+extern U32 g_flags;
 
 #endif
+
+// Bits in the push-constant `g_flags` word.
+//
+// Rendering is opt-in because a framebuffer costs 75 KiB per instance -- more
+// than VRAM, IWRAM, PRAM, OAM and I/O combined. A throughput workload usually
+// wants a reward signal, not four thousand pictures.
+KCONST U32 FLAG_RENDER = 1u;
 
 // Index of word `w` of instance `inst` in a region `words_per_inst` long.
 //
