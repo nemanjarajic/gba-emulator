@@ -486,4 +486,38 @@ CORE_FN void ppu_render_scanline(INOUT(GbaState) st, U32 y) {
 }
 
 
+// ---------------------------------------------------------------------------
+// Observations.
+//
+// The framebuffer reduced 4x and to 8-bit grayscale. A throughput workload
+// wants a small, consistent tensor rather than a picture, and at 4096 instances
+// the difference is 9.6 MiB a frame against 300 MiB.
+//
+// Nearest sampling from the centre of each 4x4 block, not an average: the
+// average costs sixteen reads per output pixel and RL agents are far more
+// sensitive to consistency than to resampling quality.
+CORE_FN void ppu_write_observation(INOUT(GbaState) st) {
+    NO_UNROLL for (U32 oy = 0u; oy < OBS_H; ++oy) {
+        NO_UNROLL for (U32 ox = 0u; ox < OBS_W; ++ox) {
+            U32 pixel = (oy * 4u + 2u) * SCREEN_W + (ox * 4u + 2u);
+            U32 colour =
+                (g_fb[MEM_IDX(FB_WORDS, st.inst, pixel >> 1u)] >> ((pixel & 1u) * 16u)) & 0xFFFFu;
+
+            // BGR555 to luminance with the usual 601 weights. Each channel is
+            // 0-31 and the weights sum to 256, so the result is 0-31 again;
+            // replicating the top bits scales it to a full 0-255.
+            U32 r = colour & 31u;
+            U32 g = (colour >> 5u) & 31u;
+            U32 b = (colour >> 10u) & 31u;
+            U32 lum = (r * 77u + g * 150u + b * 29u) >> 8u;
+            lum = (lum << 3u) | (lum >> 2u);
+
+            U32 idx = oy * OBS_W + ox;
+            U32 w = OBS_IDX(st.inst, idx >> 2u);
+            U32 sh = (idx & 3u) * 8u;
+            g_obs[w] = (g_obs[w] & (~(0xFFu << sh))) | (lum << sh);
+        }
+    }
+}
+
 #endif  // GBA_CORE_PPU_INC

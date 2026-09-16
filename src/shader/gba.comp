@@ -23,7 +23,13 @@ void main() {
     GbaState st = g_state[inst];
     st.inst = inst;  // authoritative: the buffer's copy is never trusted
 
+    // Latch this dispatch's controller state. KEYINPUT is active low, so the
+    // host supplies the register value directly.
+    io_set16(st, REG_KEYINPUT, g_input[inst] & 0x03FFu);
+
     step_cycles(st, g_cycles);
+
+    if ((g_flags & FLAG_OBSERVE) != 0u) ppu_write_observation(st);
 
     g_state[inst] = st;
 }

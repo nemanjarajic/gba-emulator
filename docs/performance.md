@@ -140,6 +140,29 @@ is host memory pressure — a 4096-instance pool is ~2.1 GB and the benchmark
 allocates and frees one per configuration. Worth re-checking before trusting
 any single measurement.
 
+## The throughput harness (M9)
+
+`m9_harness <rom> <instances> <frames>`, with rendering and observations on,
+reading back an observation and a probe value from every instance every frame:
+
+| instances | instance-frames/s | × realtime | pool |
+|---|---|---|---|
+| 256 | 261 | 4.4 | 148 MiB |
+| 1024 | 996 | 16.7 | 593 MiB |
+| 4096 | 2253 | 37.7 | 2.3 GiB |
+
+For comparison, one CPU core manages about 374 frames/s, so the harness at 4096
+instances is roughly 6x a CPU core on this workload -- lower than the ~10x for
+pure emulation, because rendering and readback are included.
+
+Rendering itself is cheap on the synthetic ROMs: 1041 vs 979 Mcycle/s with the
+PPU on, a 6% cost. That number will be worse for a real game, where all four
+background layers and the sprites are active rather than mostly backdrop.
+
+Observation readback is 5.2 MiB/s at 4096 instances, which is nowhere near a
+bottleneck -- the 4x downsample to 60x40 grayscale is what keeps it there. Full
+framebuffers would be 300 MiB per frame.
+
 ## Hot-path work that did pay off
 
 M7 cost about 3x, because the scheduler now runs after every instruction.

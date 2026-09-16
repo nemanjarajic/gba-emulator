@@ -114,6 +114,15 @@ layout(std430, binding = 9) buffer FbBuf    { uint g_fb[];    };
 // reference instead, since it runs one machine at a time.
 layout(std430, binding = 10) buffer StateBuf { GbaState g_state[]; };
 
+// One word per instance holding its KEYINPUT value, applied at the start of
+// every dispatch. A separate buffer rather than writing the I/O region
+// directly, so the host uploads one contiguous array per frame instead of
+// scattering thousands of small writes across instance slices.
+layout(std430, binding = 11) readonly buffer InputBuf { uint g_input[]; };
+
+// Downsampled grayscale observations, written when FLAG_OBSERVE is set.
+layout(std430, binding = 12) buffer ObsBuf { uint g_obs[]; };
+
 layout(push_constant) uniform PushBlock {
     uint g_num_instances;
     uint g_rom_words;   // ROM length in words; reads past it return open bus
@@ -138,6 +147,9 @@ extern U32* g_io;
 extern U32* g_sram;
 extern U32* g_fb;
 
+extern U32* g_input;
+extern U32* g_obs;
+
 extern U32 g_num_instances;
 extern U32 g_rom_words;
 extern U32 g_flags;
@@ -150,6 +162,9 @@ extern U32 g_flags;
 // than VRAM, IWRAM, PRAM, OAM and I/O combined. A throughput workload usually
 // wants a reward signal, not four thousand pictures.
 KCONST U32 FLAG_RENDER = 1u;
+// Write a downsampled observation at the end of the dispatch. Implies
+// FLAG_RENDER, since there is nothing to downsample otherwise.
+KCONST U32 FLAG_OBSERVE = 2u;
 
 // Index of word `w` of instance `inst` in a region `words_per_inst` long.
 //
@@ -171,6 +186,12 @@ KCONST U32 FLAG_RENDER = 1u;
 #else
 #define MEM_IDX(words_per_inst, inst, w) ((inst) * (words_per_inst) + (w))
 #endif
+
+// Observations are addressed contiguously per instance regardless of the
+// emulator's memory layout: they are an I/O product, not emulated machine
+// state, and keeping them contiguous makes reading one instance's observation
+// a single download rather than a strided gather.
+#define OBS_IDX(inst, w) ((inst) * OBS_WORDS + (w))
 
 #ifndef GBA_GLSL
 // GbaState is copied verbatim between host memory and a std430 storage buffer,

@@ -59,8 +59,53 @@ def build(mixed):
     return b"".join(struct.pack("<I", w) for w in words)
 
 
+def build_input_echo():
+    """A ROM that publishes its controller state for the M9 harness to verify.
+
+    Two bands are drawn every loop: rows 0-3 in a colour derived from KEYINPUT,
+    and rows 4-7 in solid white. The white band matters -- a KEYINPUT value with
+    few low bits set has a luminance of zero, so a screen painted only from the
+    input is legitimately black and gives the harness nothing to check against.
+    The controller state also goes to EWRAM word 0, which the probe path reads.
+    """
+    return [
+        0xE3A00404,  # MOV  r0, #0x04000000
+        0xE3A01B01,  # MOV  r1, #0x400
+        0xE3811003,  # ORR  r1, r1, #3       DISPCNT: mode 3, BG2 on
+        0xE5801000,  # STR  r1, [r0]
+        0xE2803F4C,  # ADD  r3, r0, #0x130   &KEYINPUT
+        0xE3A06402,  # MOV  r6, #0x02000000  EWRAM
+        0xE3A07C7F,  # MOV  r7, #0x7F00
+        0xE38770FF,  # ORR  r7, r7, #0xFF    r7 = 0x7FFF, white
+        # loop:
+        0xE1D320B0,  # LDRH r2, [r3]         read the controller
+        0xE5862000,  # STR  r2, [r6]         publish for the probe
+        0xE3A04406,  # MOV  r4, #0x06000000  VRAM
+        0xE3A05000,  # MOV  r5, #0
+        # fill1: rows 0-3 from the input
+        0xE1C420B0,  # STRH r2, [r4]
+        0xE2844002,  # ADD  r4, r4, #2
+        0xE2855001,  # ADD  r5, r5, #1
+        0xE3550E3C,  # CMP  r5, #0x3C0       960 pixels = 4 rows
+        0x1AFFFFFA,  # BNE  fill1
+        0xE3A05000,  # MOV  r5, #0
+        # fill2: rows 4-7 solid white, a fixed reference for the harness
+        0xE1C470B0,  # STRH r7, [r4]
+        0xE2844002,  # ADD  r4, r4, #2
+        0xE2855001,  # ADD  r5, r5, #1
+        0xE3550E3C,  # CMP  r5, #0x3C0
+        0x1AFFFFFA,  # BNE  fill2
+        0xEAFFFFEF,  # B    loop
+    ]
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
+    path = os.path.join(OUT, "input_echo.gba")
+    data = b"".join(struct.pack("<I", w) for w in build_input_echo())
+    with open(path, "wb") as f:
+        f.write(data)
+    print(f"wrote {os.path.normpath(path)} ({len(data)} bytes)")
     for name, mixed in (("diverge.gba", False), ("diverge2.gba", True)):
         path = os.path.join(OUT, name)
         data = build(mixed)

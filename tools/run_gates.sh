@@ -32,4 +32,8 @@ for r in stripes shades hello; do
         echo "FAILED"; fail=1
     fi
 done
+# The M9 harness needs its synthetic ROM.
+python3 tools/make_bench_roms.py >/dev/null
+run M9 ./build/m9_harness build/roms/input_echo.gba 1024 12
+
 exit $fail

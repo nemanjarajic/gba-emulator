@@ -37,6 +37,14 @@ KCONST U32 SCREEN_W = 240u;
 KCONST U32 SCREEN_H = 160u;
 KCONST U32 FB_WORDS = (SCREEN_W * SCREEN_H) >> 1u;  // 2 bytes/pixel -> 2 px/word
 
+// Observation buffer: the framebuffer downsampled 4x and reduced to 8-bit
+// grayscale, which is what a reinforcement-learning workload actually wants.
+// A full framebuffer is 75 KiB per instance; this is 2.4 KiB, so reading back
+// 4096 of them per frame is 9.6 MiB rather than 300 MiB.
+KCONST U32 OBS_W = SCREEN_W / 4u;   // 60
+KCONST U32 OBS_H = SCREEN_H / 4u;   // 40
+KCONST U32 OBS_WORDS = (OBS_W * OBS_H) / 4u;  // four 8-bit samples per word
+
 // Timing. One frame is 228 scanlines of 1232 cycles = 280,896 cycles at
 // 16.78 MHz. Referenced by the dispatch loop, which runs whole scanlines.
 KCONST U32 CYCLES_PER_SCANLINE = 1232u;

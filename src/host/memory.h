@@ -16,7 +16,7 @@ namespace gba::host {
 
 struct MemoryPool {
     uint32_t numInstances = 1;
-    std::vector<uint32_t> bios, rom, ewram, iwram, vram, pram, oam, io, sram, fb;
+    std::vector<uint32_t> bios, rom, ewram, iwram, vram, pram, oam, io, sram, fb, input, obs;
 
     // `withFramebuffers` is opt-in: at high instance counts a framebuffer per
     // instance costs more than the rest of the machine state put together and

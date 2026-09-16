@@ -108,6 +108,11 @@ target_link_libraries(m8_bench PRIVATE gba_host gba_vk)
 add_dependencies(m8_bench shaders)
 target_compile_options(m8_bench PRIVATE -Wall -Wextra)
 
+add_executable(m9_harness src/app/m9_harness.cpp)
+target_link_libraries(m9_harness PRIVATE gba_host gba_vk)
+add_dependencies(m9_harness shaders)
+target_compile_options(m9_harness PRIVATE -Wall -Wextra)
+
 # Renders any ROM on both targets, compares, and writes a PNG.
 add_executable(render_rom src/app/render_rom.cpp)
 target_link_libraries(render_rom PRIVATE gba_host gba_vk)

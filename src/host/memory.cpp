@@ -15,6 +15,8 @@ U32* g_oam = nullptr;
 U32* g_io = nullptr;
 U32* g_sram = nullptr;
 U32* g_fb = nullptr;
+U32* g_input = nullptr;
+U32* g_obs = nullptr;
 
 U32 g_num_instances = 1;
 U32 g_rom_words = 0;
@@ -35,6 +37,8 @@ void MemoryPool::allocate(uint32_t instances, uint32_t romWords, bool withFrameb
     io.assign(size_t(IO_WORDS) * instances, 0u);
     sram.assign(size_t(SRAM_WORDS) * instances, 0xFFFFFFFFu);  // erased flash
     fb.assign(withFramebuffers ? size_t(FB_WORDS) * instances : 1u, 0u);
+    input.assign(instances, 0x03FFu);  // active low: nothing held
+    obs.assign(size_t(OBS_WORDS) * instances, 0u);
 }
 
 void MemoryPool::bind() {
@@ -48,6 +52,8 @@ void MemoryPool::bind() {
     g_io = io.data();
     g_sram = sram.data();
     g_fb = fb.data();
+    g_input = input.data();
+    g_obs = obs.data();
     g_num_instances = numInstances;
     g_rom_words = uint32_t(rom.size());
 }

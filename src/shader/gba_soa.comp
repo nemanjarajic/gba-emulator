@@ -12,6 +12,8 @@ void main() {
     if (inst >= g_num_instances) return;
     GbaState st = g_state[inst];
     st.inst = inst;
+    io_set16(st, REG_KEYINPUT, g_input[inst] & 0x03FFu);
     step_cycles(st, g_cycles);
+    if ((g_flags & FLAG_OBSERVE) != 0u) ppu_write_observation(st);
     g_state[inst] = st;
 }

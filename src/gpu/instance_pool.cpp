@@ -27,12 +27,20 @@ void InstancePool::create(VkContext& ctx, uint32_t instances, uint32_t romWords,
     fb = createStorageBuffer(ctx, withFramebuffers ? words(FB_WORDS)
                                                    : VkDeviceSize(instances) * sizeof(uint32_t));
     state = createStorageBuffer(ctx, VkDeviceSize(instances) * sizeof(GbaState));
+    input = createStorageBuffer(ctx, VkDeviceSize(instances) * sizeof(uint32_t));
+    obs = createStorageBuffer(ctx, words(OBS_WORDS));
 
     // Zeroed on the GPU rather than through a mapped pointer, so this works
     // unchanged when the buffers are device-local and unmappable.
     for (Buffer* b : bindings()) fillBuffer(ctx, *b, 0u);
     // Save memory powers on erased, not zeroed.
     fillBuffer(ctx, sram, 0xFFFFFFFFu);
+
+    // Nothing held, until the harness says otherwise.
+    {
+        std::vector<uint32_t> released(instances, 0x03FFu);
+        uploadBuffer(ctx, input, released.data(), released.size() * sizeof(uint32_t));
+    }
 
     // KEYINPUT is active low, so a zeroed I/O region means every button is
     // held. Games take very different boot paths when they see that -- the
@@ -46,7 +54,8 @@ void InstancePool::create(VkContext& ctx, uint32_t instances, uint32_t romWords,
 }
 
 std::vector<Buffer*> InstancePool::bindings() {
-    return {&bios, &rom, &ewram, &iwram, &vram, &pram, &oam, &io, &sram, &fb, &state};
+    return {&bios, &rom, &ewram,  &iwram, &vram,  &pram, &oam,
+            &io,   &sram, &fb,     &state, &input, &obs};
 }
 
 void InstancePool::uploadStates(VkContext& ctx, const std::vector<GbaState>& states) {
@@ -58,9 +67,36 @@ void InstancePool::downloadStates(VkContext& ctx, std::vector<GbaState>& states)
     downloadBuffer(ctx, state, states.data(), states.size() * sizeof(GbaState));
 }
 
+void InstancePool::setInputs(VkContext& ctx, const std::vector<uint32_t>& keyinput) {
+    uploadBuffer(ctx, input, keyinput.data(),
+                 std::min<size_t>(keyinput.size(), numInstances) * sizeof(uint32_t));
+}
+
+void InstancePool::readObservations(VkContext& ctx, std::vector<uint8_t>& out) {
+    out.resize(size_t(numInstances) * OBS_W * OBS_H);
+    downloadBuffer(ctx, obs, out.data(), out.size());
+}
+
+void InstancePool::readProbe(VkContext& ctx, Buffer& region, uint32_t wordsPerInstance,
+                             uint32_t wordIndex, std::vector<uint32_t>& out) {
+    out.resize(numInstances);
+    if (region.mapped) {
+        // Unified memory or Resizable BAR: gather straight out of the mapping.
+        const auto* words = static_cast<const uint32_t*>(region.mapped);
+        for (uint32_t i = 0; i < numInstances; ++i)
+            out[i] = words[size_t(i) * wordsPerInstance + wordIndex];
+        return;
+    }
+    // Device-local only: one small transfer per instance. Slow, but this path
+    // exists for correctness on a discrete GPU rather than for throughput.
+    for (uint32_t i = 0; i < numInstances; ++i)
+        downloadBuffer(ctx, region, &out[i], sizeof(uint32_t),
+                       (VkDeviceSize(i) * wordsPerInstance + wordIndex) * sizeof(uint32_t));
+}
+
 uint64_t InstancePool::totalBytes() const {
     return bios.size + rom.size + ewram.size + iwram.size + vram.size + pram.size + oam.size +
-           io.size + sram.size + fb.size + state.size;
+           io.size + sram.size + fb.size + state.size + input.size + obs.size;
 }
 
 void InstancePool::destroy(VkContext& ctx) {

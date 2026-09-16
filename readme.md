@@ -67,6 +67,25 @@ same ROM on both builds in lockstep and the first register mismatch names the
 exact broken opcode. Debugging a shader-resident ARM7TDMI without that oracle
 is not realistic.
 
+## Running many instances
+
+```sh
+python3 tools/make_bench_roms.py            # synthetic ROMs for the harness
+./build/m9_harness build/roms/input_echo.gba 4096 20
+```
+
+The harness is the throughput interface: a distinct controller input per
+instance per frame, a 60x40 grayscale observation read back from every instance
+each frame, a probe that gathers one word from the same address in every
+instance (a reward signal, without reading back whole regions), and snapshot
+and restore of machine state.
+
+At 4096 instances it sustains about **2250 instance-frames/s**, roughly 38x
+realtime in aggregate. Every claim it makes is checked rather than displayed:
+inputs are read back from inside the emulated machine, instance 0's observation
+is compared byte for byte against the CPU reference, and a snapshot followed by
+a replay of the same inputs must reproduce the same observation exactly.
+
 ## Running a commercial game
 
 ```sh
@@ -135,7 +154,7 @@ They were implemented and gated together.
 | M6 | Tiled modes, sprites, windows, blending | **done** |
 | M7 | DMA, timers, interrupts, BIOS, Flash saves | **mostly** |
 | M8 | Scale out; measure divergence and memory layout | **done** |
-| M9 | Throughput harness | |
+| M9 | Throughput harness | **done** |
 
 See `docs/device-limits.md` for measured hardware limits and the instance-count
 budget.
