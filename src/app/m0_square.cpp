@@ -25,7 +25,7 @@ struct Push {
 
 void reportLimits(const VkContext& ctx) {
     const auto& l = ctx.props.limits;
-    std::printf("device                          : %s (MoltenVK)\n", ctx.props.deviceName);
+    std::printf("device                          : %s\n", ctx.props.deviceName);
     std::printf("subgroupSize                    : %u  <- GBA instances per SIMD group\n",
                 ctx.subgroupSize);
     std::printf("maxComputeWorkGroupInvocations  : %u\n", l.maxComputeWorkGroupInvocations);

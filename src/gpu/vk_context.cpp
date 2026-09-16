@@ -143,7 +143,38 @@ void VkContext::init(bool validation, bool debugPrintf) {
     }
     std::vector<VkPhysicalDevice> devs(n);
     VK_CHECK(vkEnumeratePhysicalDevices(instance, &n, devs.data()));
+
+    // Prefer a discrete GPU. Enumeration order is the driver's choice, and a
+    // desktop with an integrated GPU beside the discrete one (an AMD APU next
+    // to an NVIDIA card, say) can list the integrated device first.
+    // GBA_DEVICE=<index> overrides the choice.
+    auto rank = [](VkPhysicalDeviceType t) {
+        switch (t) {
+            case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU: return 3;
+            case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: return 2;
+            case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU: return 1;
+            default: return 0;
+        }
+    };
     phys = devs[0];
+    int best = -1;
+    for (auto d : devs) {
+        VkPhysicalDeviceProperties p{};
+        vkGetPhysicalDeviceProperties(d, &p);
+        if (rank(p.deviceType) > best) {
+            best = rank(p.deviceType);
+            phys = d;
+        }
+    }
+    if (const char* want = std::getenv("GBA_DEVICE")) {
+        const unsigned long i = std::strtoul(want, nullptr, 10);
+        if (i < devs.size()) {
+            phys = devs[i];
+        } else {
+            std::fprintf(stderr, "[vk] GBA_DEVICE=%s but only %u devices\n", want, n);
+            std::abort();
+        }
+    }
 
     vkGetPhysicalDeviceProperties(phys, &props);
     vkGetPhysicalDeviceMemoryProperties(phys, &memProps);
