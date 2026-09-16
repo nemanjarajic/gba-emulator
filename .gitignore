@@ -4,3 +4,4 @@ roms/
 *.png
 compile_commands.json
 .DS_Store
+third_party/gba-tests/

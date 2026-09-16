@@ -21,7 +21,8 @@ oracle for the GPU core.
 ## Build
 
 ```sh
-source env.sh          # required: see docs/device-limits.md for why
+source env.sh                # required: see docs/device-limits.md for why
+./tools/fetch_test_roms.sh   # one-time: test ROMs for the M2+ gates
 cmake -S . -B build -G Ninja
 cmake --build build
 ./build/m0_square      # M0 gate: compute shader round-trip
@@ -30,7 +31,8 @@ cmake --build build
 ./tools/run_cpu_tests.sh   # M2/M3 gate: jsmolka CPU test ROMs
 ```
 
-Test ROMs come from `third_party/gba-tests` (cloned from jsmolka/gba-tests).
+Test ROMs are not vendored; run `./tools/fetch_test_roms.sh` once to clone
+`jsmolka/gba-tests` into `third_party/`.
 
 No BIOS image is needed or shipped. The GBA BIOS is copyrighted, so
 `src/core/bios.inc` implements the SWI calls directly (Div, Sqrt, CpuSet,
