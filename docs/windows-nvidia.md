@@ -111,6 +111,24 @@ Two limits bind before memory does:
 - **Occupancy.** See the throughput section below: raw emulation peaks at
   9216 instances and a full harness frame at 4096, both well inside memory.
 
+### Reclaiming the save memory
+
+Save memory is 128 KiB per instance, a quarter of the footprint, and a rollout
+that never saves does not need it:
+
+```cpp
+pool.create(ctx, instances, romWords, withFramebuffers, /*withSave=*/false);
+CorePush push{instances, romWords, cycles, pool.baseFlags() | FLAG_RENDER};
+```
+
+`baseFlags()` supplies `FLAG_NO_SAVE` automatically; passing plain `0` for the
+flags with a pool built this way would index a buffer that is too small.
+
+**But note:** some games refuse to run without save memory at all. Pokemon
+Emerald identifies its flash chip on boot and, finding none, sets its main
+callback to NULL and draws nothing forever. Check the game boots before
+committing to this.
+
 ## Throughput
 
 ### Raw emulation: 8.8x the M4
@@ -177,23 +195,64 @@ ROM, action repeat 4), 4096 instances went from 2,385 to **4,145 agent
 steps/s**. The gain is smaller than the harness's because only the last of the
 four frames is observed.
 
-### Reclaiming the save memory
+### Pokemon Emerald
 
-Save memory is 128 KiB per instance, a quarter of the footprint, and a rollout
-that never saves does not need it:
+A real game, not a synthetic ROM. `tools/run_game.sh` boots it to the Game Freak
+screen with zero register mismatches and a byte-identical framebuffer against
+the CPU reference, as on the M4.
 
-```cpp
-pool.create(ctx, instances, romWords, withFramebuffers, /*withSave=*/false);
-CorePush push{instances, romWords, cycles, pool.baseFlags() | FLAG_RENDER};
-```
+`m8_bench`, 2,000,000 cycles per instance from boot, rendering off. CPU
+baseline 51 Mcycle/s on one core.
 
-`baseFlags()` supplies `FLAG_NO_SAVE` automatically; passing plain `0` for the
-flags with a pool built this way would index a buffer that is too small.
+| instances | agg Mcycle/s | MHz/instance | M4 |
+|---|---|---|---|
+| 1024 | 870 | 0.85 | 319 |
+| 4096 | 3,442 | 0.84 | 812 |
+| 8192 | 5,004 | 0.61 | 792 |
+| 9216 | 5,576 | 0.61 | |
 
-**But note:** some games refuse to run without save memory at all. Pokemon
-Emerald identifies its flash chip on boot and, finding none, sets its main
-callback to NULL and draws nothing forever. Check the game boots before
-committing to this.
+Emerald is about a third of `arm.gba`'s throughput here, against three quarters
+on the M4, so the card's lead over the M4 narrows to 4.2x at 4096 and 6.3x at
+8192. Per-instance speed starts to fall at 8192 rather than 9216.
+
+Through the Python bindings, action repeat 4, which is the number a training
+run sees:
+
+| instances | agent steps/s | x realtime | M4 |
+|---|---|---|---|
+| 256 | 105 | 7 | 43 |
+| 1024 | 407 | 27 | 168 |
+| 4096 | 1,529 | 102 | 397 |
+| 8192 | 2,463 | 165 | |
+| **9216** | **2,737** | 183 | |
+| 9280 | 1,370 | 92 | |
+
+Unlike the synthetic harness, Emerald keeps gaining up to 9216, and the cliff
+is at exactly the same place. **9216 is the instance count to use for Emerald**:
+about 9.9M agent steps an hour, against 1.4M on the M4.
+
+Creating the environment takes about 20 seconds at that size, and the first
+4096 cycles take another 16-18: Emerald's boot clears all of RAM through
+`RegisterRamReset`, which is the first touch of several GB of freshly
+allocated GPU memory. It is a one-off per process.
+
+**Above 9720 instances, Emerald with rendering loses the device.** 9720 works
+and 9721 fails with `VK_ERROR_DEVICE_LOST` on the first dispatch, logged by the
+driver as `nvlddmkm` event 153. What is known:
+
+- It needs all three of Emerald, rendering, and more than 9720 instances.
+  Emerald with rendering off runs at 12,288; `arm.gba` with rendering runs at
+  10,240 with the same buffers.
+- It is not dispatch length. The failing dispatch is 4096 cycles, the same one
+  that takes 18 s and succeeds at 9720; splitting frames into dispatches as
+  short as 2048 cycles changes nothing.
+- It is not total memory: `arm.gba` at 10,240 allocates more.
+- It is not an out-of-range VRAM read in the PPU. The CPU core, instrumented,
+  sees none in 1500 frames.
+
+Since everything above 9216 is slower anyway, it costs nothing in practice, but
+it is a crash rather than a slowdown. Reproduce with
+`ONLY=9721 ./build/m8_bench <emerald.gba> 8192 render`.
 
 ## Known gaps
 
@@ -205,6 +264,5 @@ committing to this.
 - Resizable BAR off is still untested. Large reads now use the staging path
   regardless, so that half is exercised; uploads and small reads through
   staging are not.
-- No commercial game has been measured here yet. On the M4 Emerald ran about
-  25% below the synthetic ROM.
 - The 9216-instance cliff is measured, not explained.
+- Emerald with rendering crashes above 9720 instances; see above.
