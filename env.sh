@@ -23,8 +23,18 @@ export VK_DRIVER_FILES="/opt/homebrew/etc/vulkan/icd.d/MoltenVK_icd.json"
 #
 # Rewriting the manifest with an absolute library path fixes both at once and
 # needs no DYLD_* variable at all.
+# Resolve against this script's own location, not the working directory.
+# Sourcing it from elsewhere -- from a sibling checkout, say -- would otherwise
+# create a build/ directory there.
+if [ -n "${ZSH_VERSION:-}" ]; then
+    _gba_src="$(eval 'echo ${(%):-%x}')"
+else
+    _gba_src="${BASH_SOURCE[0]:-$0}"
+fi
+_gba_root="$(cd "$(dirname "$_gba_src")" && pwd)"
+
 _layer_src="/opt/homebrew/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json"
-_layer_dir="$PWD/build/vulkan/explicit_layer.d"
+_layer_dir="$_gba_root/build/vulkan/explicit_layer.d"
 if [ -f "$_layer_src" ]; then
     mkdir -p "$_layer_dir"
     sed 's|"library_path": *"lib|"library_path": "/opt/homebrew/lib/lib|' \
@@ -33,4 +43,4 @@ if [ -f "$_layer_src" ]; then
 else
     export VK_LAYER_PATH="/opt/homebrew/share/vulkan/explicit_layer.d"
 fi
-unset _layer_src _layer_dir
+unset _layer_src _layer_dir _gba_src _gba_root
