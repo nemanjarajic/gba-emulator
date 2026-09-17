@@ -11,6 +11,7 @@
 #include <cstring>
 #include <fstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace gba;
@@ -50,8 +51,16 @@ struct GbaEnv {
     uint32_t chunkCycles = CYCLES_PER_FRAME / 16;
     bool chunkFixed = false;
 
+    // Share of wall time the emulator may hold the GPU, GBA_ENV_GPU_DUTY in
+    // (0, 1]. Dispatches otherwise follow each other with no gap, so the GPU
+    // reads 100% busy at any instance count and the desktop stutters. Below 1,
+    // each dispatch is followed by a sleep that brings its share down to the
+    // duty, and dispatches are kept short so the gaps come often enough for the
+    // compositor to use.
+    double duty = 1.0;
+
     void dispatch(uint32_t cycles, uint32_t extraFlags) {
-        constexpr double kTargetSeconds = 0.25;
+        const double kTargetSeconds = duty < 1.0 ? 0.05 : 0.25;
         constexpr uint32_t kMinChunk = 1024;
         // Rendering happens scanline by scanline as the machine runs, so a
         // frame split across dispatches draws exactly the same picture. The
@@ -66,9 +75,11 @@ struct GbaEnv {
                           flags | (done == cycles ? observe : 0u)};
             const auto t0 = std::chrono::steady_clock::now();
             dispatchBlocking(ctx, pipe, groups(), &push, sizeof(push));
-            if (chunkFixed) continue;
             const double secs =
                 std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+            if (duty < 1.0)
+                std::this_thread::sleep_for(std::chrono::duration<double>(secs * (1.0 - duty) / duty));
+            if (chunkFixed) continue;
             if (secs > kTargetSeconds && chunkCycles / 2 >= kMinChunk)
                 chunkCycles /= 2;
             else if (secs < kTargetSeconds / 4 && chunk == chunkCycles &&
@@ -98,6 +109,10 @@ GbaEnv* gba_env_create(const char* rom_path, uint32_t num_instances, uint32_t fl
     if (const char* fixed = std::getenv("GBA_ENV_DISPATCH_CYCLES")) {
         env->chunkCycles = std::max(uint32_t(std::strtoul(fixed, nullptr, 10)), 1u);
         env->chunkFixed = true;
+    }
+    if (const char* duty = std::getenv("GBA_ENV_GPU_DUTY")) {
+        const double d = std::strtod(duty, nullptr);
+        env->duty = (d > 0.0 && d < 1.0) ? d : 1.0;
     }
 
     if (!host::loadBinary(rom_path, env->rom)) {
