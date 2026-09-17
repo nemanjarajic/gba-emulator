@@ -5,6 +5,9 @@
 #include "gpu/vk_context.h"
 #include "host/memory.h"
 
+#include <algorithm>
+#include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <string>
@@ -38,9 +41,40 @@ struct GbaEnv {
 
     uint32_t groups() const { return (instances + kLocalSize - 1) / kLocalSize; }
 
+    // Cycles per dispatch. Windows resets the GPU when one command runs for
+    // about two seconds (TDR): on an RTX 5060 Ti a 1.5 s dispatch survives and
+    // a 2 s one loses the device. A whole frame of Emerald at 9280 instances
+    // already takes 1.7 s, so frames are split, and the split adapts to
+    // measured time: it starts small, doubles while dispatches are quick and
+    // halves when one is slow. GBA_ENV_DISPATCH_CYCLES fixes it instead.
+    uint32_t chunkCycles = CYCLES_PER_FRAME / 16;
+    bool chunkFixed = false;
+
     void dispatch(uint32_t cycles, uint32_t extraFlags) {
-        CorePush push{instances, uint32_t(rom.size()), cycles, pool.baseFlags() | extraFlags};
-        dispatchBlocking(ctx, pipe, groups(), &push, sizeof(push));
+        constexpr double kTargetSeconds = 0.25;
+        constexpr uint32_t kMinChunk = 1024;
+        // Rendering happens scanline by scanline as the machine runs, so a
+        // frame split across dispatches draws exactly the same picture. The
+        // observation is sampled at the end of a dispatch, so only the last
+        // one takes it.
+        const uint32_t observe = extraFlags & FLAG_OBSERVE;
+        const uint32_t flags = pool.baseFlags() | (extraFlags & ~FLAG_OBSERVE);
+        for (uint32_t done = 0; done < cycles;) {
+            const uint32_t chunk = std::min(chunkCycles, cycles - done);
+            done += chunk;
+            CorePush push{instances, uint32_t(rom.size()), chunk,
+                          flags | (done == cycles ? observe : 0u)};
+            const auto t0 = std::chrono::steady_clock::now();
+            dispatchBlocking(ctx, pipe, groups(), &push, sizeof(push));
+            if (chunkFixed) continue;
+            const double secs =
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+            if (secs > kTargetSeconds && chunkCycles / 2 >= kMinChunk)
+                chunkCycles /= 2;
+            else if (secs < kTargetSeconds / 4 && chunk == chunkCycles &&
+                     chunkCycles < CYCLES_PER_FRAME)
+                chunkCycles *= 2;
+        }
     }
 };
 
@@ -61,6 +95,10 @@ GbaEnv* gba_env_create(const char* rom_path, uint32_t num_instances, uint32_t fl
     auto* env = new GbaEnv();
     env->instances = num_instances;
     env->flags = flags;
+    if (const char* fixed = std::getenv("GBA_ENV_DISPATCH_CYCLES")) {
+        env->chunkCycles = std::max(uint32_t(std::strtoul(fixed, nullptr, 10)), 1u);
+        env->chunkFixed = true;
+    }
 
     if (!host::loadBinary(rom_path, env->rom)) {
         setError(std::string("cannot read ") + rom_path);
