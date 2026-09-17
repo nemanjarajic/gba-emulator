@@ -231,10 +231,34 @@ Unlike the synthetic harness, Emerald keeps gaining up to 9216, and the cliff
 is at exactly the same place. **9216 is the instance count to use for Emerald**:
 about 9.9M agent steps an hour, against 1.4M on the M4.
 
-Creating the environment takes about 20 seconds at that size, and the first
-4096 cycles take another 16-18: Emerald's boot clears all of RAM through
-`RegisterRamReset`, which is the first touch of several GB of freshly
-allocated GPU memory. It is a one-off per process.
+Creating the environment takes about 20 seconds at that size; the first step
+after that takes about a second and later ones settle. It is a one-off per
+process. (`m8_bench`'s untimed warm-up dispatch shows the same one-off cost
+differently: 0.3 s at 4096 instances, 7 s at 6144 and about 18 s from 7168 up,
+whatever the ROM. That is not the process's memory budget, which
+`VK_EXT_memory_budget` reports as 6.96 GiB against about 4 GiB of pool. What it
+is has not been found.)
+
+### Dispatches must stay under two seconds
+
+Windows resets a GPU whose command runs too long (TDR), and compute dispatches
+are not exempt. On this card, with `arm.gba` at 4096 instances, a 1.47 s
+dispatch completes and a 2 s one loses the device (`VK_ERROR_DEVICE_LOST`,
+about 4.3 s after submission). The macOS watchdog was never approached, so
+nothing needed to care before.
+
+A whole frame is one dispatch in the C API, and at 9280 instances a frame of
+Emerald already takes 1.7 s. So `gba_env_step` now splits frames and adapts the
+split to measured time, aiming at 0.25 s a dispatch: it starts at 1/16 of a
+frame, doubles while dispatches are quick and halves when one is slow.
+`GBA_ENV_DISPATCH_CYCLES=<n>` fixes the split instead. Splitting is exact: 300
+frames of Emerald hash identically with whole-frame, adaptive, and
+12,345-cycle dispatches, and throughput is unchanged within 2%.
+
+The gates and `m8_bench` do not adapt. `m8_bench`'s default of 262,144
+cycles is safe, but a large `DISPATCH=` is not.
+
+### Emerald crashes above 9720 instances
 
 **Above 9720 instances, Emerald with rendering loses the device.** 9720 works
 and 9721 fails with `VK_ERROR_DEVICE_LOST` on the first dispatch, logged by the
@@ -243,9 +267,9 @@ driver as `nvlddmkm` event 153. What is known:
 - It needs all three of Emerald, rendering, and more than 9720 instances.
   Emerald with rendering off runs at 12,288; `arm.gba` with rendering runs at
   10,240 with the same buffers.
-- It is not dispatch length. The failing dispatch is 4096 cycles, the same one
-  that takes 18 s and succeeds at 9720; splitting frames into dispatches as
-  short as 2048 cycles changes nothing.
+- It is not the two-second limit below. Through the C API it fails with
+  dispatches as short as 2048 cycles, and the `m8_bench` warm-up dispatch that
+  fails at 9721 takes 23 s and succeeds at 9720.
 - It is not total memory: `arm.gba` at 10,240 allocates more.
 - It is not an out-of-range VRAM read in the PPU. The CPU core, instrumented,
   sees none in 1500 frames.
