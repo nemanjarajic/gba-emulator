@@ -193,7 +193,7 @@ std::string disasmThumb(uint16_t op, uint32_t pc) {
     if (top == 5) {
         const std::string rd = reg(op & 7), rb = reg((op >> 3) & 7), ro = reg((op >> 6) & 7);
         if (op & 0x200) {
-            static const char* k[4] = {"strh ", "ldrh ", "ldrsb", "ldrsh"};
+            static const char* k[4] = {"strh ", "ldrsb", "ldrh ", "ldrsh"};
             return std::string(k[(op >> 10) & 3]) + " " + rd + ", [" + rb + ", " + ro + "]";
         }
         const char* k = (op & 0x800) ? ((op & 0x400) ? "ldrb " : "ldr  ")

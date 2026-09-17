@@ -138,15 +138,18 @@ CORE_FN void thumb_reg_offset(INOUT(GbaState) st, U32 op) {
         }
         return;
     }
-    // format 8
-    U32 kind = (op >> 10u) & 3u;  // S:H
+    // format 8. Bit 11 is H and bit 10 is S, so the two-bit field reads
+    // 0 STRH, 1 LDSB, 2 LDRH, 3 LDSH. These were once swapped, which turned
+    // every sign-extended byte load into a halfword load: Pokemon Emerald then
+    // looked a map group up as a 16-bit value and crashed entering the truck.
+    U32 kind = (op >> 10u) & 3u;  // H:S
     switch (kind) {
-        case 0u: bus_write16(st, addr, st.r[rd]); break;  // STRH
-        case 1u: {                                        // LDRH
+        case 0u: bus_write16(st, addr, st.r[rd]); break;                   // STRH
+        case 1u: st.r[rd] = sign_extend(bus_read8(st, addr), 8u); break;  // LDSB
+        case 2u: {                                                         // LDRH
             U32 v = bus_read16(st, addr);
             st.r[rd] = ((addr & 1u) != 0u) ? ror32(v, 8u) : v;
         } break;
-        case 2u: st.r[rd] = sign_extend(bus_read8(st, addr), 8u); break;  // LDSB
         default:                                                           // LDSH
             st.r[rd] = ((addr & 1u) != 0u) ? sign_extend(bus_read8(st, addr), 8u)
                                            : sign_extend(bus_read16(st, addr), 16u);
