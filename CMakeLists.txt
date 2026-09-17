@@ -127,6 +127,16 @@ target_link_libraries(m6_effects PRIVATE gba_host gba_vk)
 add_dependencies(m6_effects shaders)
 target_compile_options(m6_effects PRIVATE ${GBA_WARNINGS})
 
+# Plays an input script on the CPU core and writes a gba_env reset point.
+add_executable(make_state src/app/make_state.cpp)
+target_link_libraries(make_state PRIVATE gba_host)
+target_compile_options(make_state PRIVATE ${GBA_WARNINGS})
+
+# Known-answer checks for core bugs the test ROMs and parity harnesses missed.
+add_executable(regressions src/app/regressions.cpp)
+target_link_libraries(regressions PRIVATE gba_host)
+target_compile_options(regressions PRIVATE ${GBA_WARNINGS})
+
 add_executable(m7_io src/app/m7_io.cpp)
 target_link_libraries(m7_io PRIVATE gba_host)
 target_compile_options(m7_io PRIVATE ${GBA_WARNINGS})

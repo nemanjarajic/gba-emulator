@@ -16,6 +16,7 @@ run() {
 }
 run M0 ./build/m0_square
 run M1-bus ./build/m1_membus
+run Regress ./build/regressions
 run M1-parity ./build/m1_parity
 printf '%-12s\n' "M2/M3"
 ./tools/run_cpu_tests.sh | sed 's/^/    /' || fail=1
