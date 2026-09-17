@@ -22,13 +22,22 @@
 // The PPU reads video memory directly rather than through the CPU bus: it is
 // not subject to the CPU's byte-write quirks, and this skips the region decode
 // on every pixel.
+//
+// Offsets are mirrored exactly as the bus mirrors them. Callers compute them
+// from tile numbers, and those run past the 96 KiB of VRAM: a sprite tile is
+// 0x10000 + tile * 32, which for high tiles or the later tiles of a large
+// sprite lands in the region hardware mirrors back onto 64..96 KiB. Unmirrored,
+// Pokemon Emerald's intro read the next instance's VRAM, and past the end of
+// the buffer for the last instance -- a device loss on the GPU.
 
 CORE_FN U32 vram_read8_raw(INOUT(GbaState) st, U32 off) {
+    off = vram_offset(off);
     U32 w = g_vram[MEM_IDX(VRAM_WORDS, st.inst, off >> 2u)];
     return (w >> ((off & 3u) * 8u)) & 0xFFu;
 }
 
 CORE_FN U32 vram_read16_raw(INOUT(GbaState) st, U32 off) {
+    off = vram_offset(off);
     U32 w = g_vram[MEM_IDX(VRAM_WORDS, st.inst, off >> 2u)];
     return (w >> ((off & 2u) * 8u)) & 0xFFFFu;
 }
