@@ -423,6 +423,32 @@ void downloadBuffer(VkContext& ctx, Buffer& src, void* dst, VkDeviceSize bytes,
     std::memcpy(dst, stage.mapped, bytes);
 }
 
+void downloadRegions(VkContext& ctx, Buffer& src, const std::vector<VkBufferCopy>& regions,
+                     VkDeviceSize bytes, void* dst) {
+    if (regions.empty() || bytes == 0) return;
+    Buffer& stage = ensureStaging(ctx, bytes);
+
+    VkCommandBufferAllocateInfo cai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    cai.commandPool = ctx.cmdPool;
+    cai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cai.commandBufferCount = 1;
+    VkCommandBuffer cmd;
+    VK_CHECK(vkAllocateCommandBuffers(ctx.device, &cai, &cmd));
+    VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    VK_CHECK(vkBeginCommandBuffer(cmd, &bi));
+    vkCmdCopyBuffer(cmd, src.buf, stage.buf, uint32_t(regions.size()), regions.data());
+    VK_CHECK(vkEndCommandBuffer(cmd));
+    VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    si.commandBufferCount = 1;
+    si.pCommandBuffers = &cmd;
+    VK_CHECK(vkQueueSubmit(ctx.queue, 1, &si, VK_NULL_HANDLE));
+    VK_CHECK(vkQueueWaitIdle(ctx.queue));
+    vkFreeCommandBuffers(ctx.device, ctx.cmdPool, 1, &cmd);
+
+    std::memcpy(dst, stage.mapped, bytes);
+}
+
 void fillBuffer(VkContext& ctx, Buffer& dst, uint32_t value) {
     // vkCmdFillBuffer works regardless of host visibility, so zeroing a pool
     // needs no special case for the staging path.

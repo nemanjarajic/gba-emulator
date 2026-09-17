@@ -227,23 +227,78 @@ void InstancePool::restoreInstances(VkContext& ctx, const std::vector<uint32_t>&
 void InstancePool::readProbes(VkContext& ctx, const std::vector<uint32_t>& addresses,
                               std::vector<uint32_t>& out) {
     out.assign(addresses.size() * numInstances, 0u);
-    std::vector<uint32_t> one;
+
+    struct Target { Buffer* region; uint32_t words; uint32_t word; };
+    std::vector<Target> targets(addresses.size(), Target{nullptr, 0, 0});
     for (size_t a = 0; a < addresses.size(); ++a) {
         const uint32_t addr = addresses[a];
-        Buffer* region = nullptr;
-        uint32_t words = 0, offset = 0;
+        Target& t = targets[a];
         switch ((addr >> 24) & 0xF) {
-            case 0x2: region = &ewram; words = EWRAM_WORDS; offset = addr & (EWRAM_SIZE - 1); break;
-            case 0x3: region = &iwram; words = IWRAM_WORDS; offset = addr & (IWRAM_SIZE - 1); break;
-            case 0x5: region = &pram;  words = PRAM_WORDS;  offset = addr & (PRAM_SIZE - 1);  break;
-            case 0x6: region = &vram;  words = VRAM_WORDS;  offset = addr & 0x1FFFF;          break;
-            case 0x7: region = &oam;   words = OAM_WORDS;   offset = addr & (OAM_SIZE - 1);   break;
-            case 0x4: region = &io;    words = IO_WORDS;    offset = addr & (IO_SIZE - 1);    break;
+            case 0x2: t = {&ewram, EWRAM_WORDS, (addr & (EWRAM_SIZE - 1)) >> 2}; break;
+            case 0x3: t = {&iwram, IWRAM_WORDS, (addr & (IWRAM_SIZE - 1)) >> 2}; break;
+            case 0x5: t = {&pram, PRAM_WORDS, (addr & (PRAM_SIZE - 1)) >> 2}; break;
+            // VRAM mirrors on a 128 KiB window, not a power of two; see memmap.h.
+            case 0x6: t = {&vram, VRAM_WORDS, vram_offset(addr) >> 2}; break;
+            case 0x7: t = {&oam, OAM_WORDS, (addr & (OAM_SIZE - 1)) >> 2}; break;
+            case 0x4: t = {&io, IO_WORDS, (addr & (IO_SIZE - 1)) >> 2}; break;
             default: break;  // ROM and BIOS are shared and constant; nothing to probe
         }
-        if (!region) continue;
-        readProbe(ctx, *region, words, offset >> 2, one);
-        std::copy(one.begin(), one.end(), out.begin() + long(a) * numInstances);
+    }
+
+    // Unified memory: gather straight out of the mapping, which costs nothing.
+    if (ctx.unifiedMemory) {
+        std::vector<uint32_t> one;
+        for (size_t a = 0; a < addresses.size(); ++a) {
+            if (!targets[a].region || !targets[a].region->mapped) continue;
+            readProbe(ctx, *targets[a].region, targets[a].words, targets[a].word, one);
+            std::copy(one.begin(), one.end(), out.begin() + long(a) * numInstances);
+        }
+        if (std::all_of(targets.begin(), targets.end(),
+                        [](const Target& t) { return !t.region || t.region->mapped; }))
+            return;
+    }
+
+    // A discrete GPU: every read through the mapping is a trip over PCIe, and a
+    // reward function probing a few hundred bytes of RAM in every instance made
+    // several hundred thousand of them a step. Instead, for each region, merge
+    // the probed words into runs of adjacent words and copy every instance's
+    // runs into staging with one submission.
+    for (Buffer* region : {&ewram, &iwram, &pram, &vram, &oam, &io}) {
+        std::vector<uint32_t> words;
+        uint32_t perInstance = 0;
+        for (const Target& t : targets)
+            if (t.region == region) { words.push_back(t.word); perInstance = t.words; }
+        if (words.empty() || (ctx.unifiedMemory && region->mapped)) continue;
+        std::sort(words.begin(), words.end());
+        words.erase(std::unique(words.begin(), words.end()), words.end());
+
+        struct Run { uint32_t first, count, staged; };  // staged: offset within one instance's block
+        std::vector<Run> runs;
+        uint32_t blockWords = 0;
+        for (uint32_t w : words) {
+            if (!runs.empty() && runs.back().first + runs.back().count == w) {
+                ++runs.back().count;
+            } else {
+                runs.push_back({w, 1, blockWords});
+            }
+            ++blockWords;
+        }
+
+        std::vector<VkBufferCopy> copies;
+        copies.reserve(size_t(runs.size()) * numInstances);
+        for (uint32_t i = 0; i < numInstances; ++i)
+            for (const Run& r : runs)
+                copies.push_back({(VkDeviceSize(i) * perInstance + r.first) * 4,
+                                  (VkDeviceSize(i) * blockWords + r.staged) * 4, VkDeviceSize(r.count) * 4});
+        std::vector<uint32_t> staged(size_t(blockWords) * numInstances);
+        downloadRegions(ctx, *region, copies, VkDeviceSize(staged.size()) * 4, staged.data());
+
+        for (size_t a = 0; a < addresses.size(); ++a) {
+            if (targets[a].region != region) continue;
+            const uint32_t pos = uint32_t(std::lower_bound(words.begin(), words.end(), targets[a].word) - words.begin());
+            for (uint32_t i = 0; i < numInstances; ++i)
+                out[a * numInstances + i] = staged[size_t(i) * blockWords + pos];
+        }
     }
 }
 

@@ -70,6 +70,13 @@ void downloadBuffer(VkContext& ctx, Buffer& src, void* dst, VkDeviceSize bytes,
                     VkDeviceSize srcOffset = 0);
 void fillBuffer(VkContext& ctx, Buffer& dst, uint32_t value);
 
+// Copies many small pieces of `src` into host memory with one GPU submission:
+// each region's dstOffset is its position in `dst`, which must hold `bytes`.
+// Scattered reads through a PCIe mapping cost a bus round trip each; this pays
+// for one.
+void downloadRegions(VkContext& ctx, Buffer& src, const std::vector<VkBufferCopy>& regions,
+                     VkDeviceSize bytes, void* dst);
+
 // A compute pipeline over `numBuffers` std430 storage buffers bound at
 // consecutive bindings 0..numBuffers-1, plus an optional push-constant block.
 struct ComputePipeline {
