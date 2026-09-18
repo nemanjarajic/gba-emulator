@@ -132,6 +132,12 @@ add_executable(make_state src/app/make_state.cpp)
 target_link_libraries(make_state PRIVATE gba_host)
 target_compile_options(make_state PRIVATE ${GBA_WARNINGS})
 
+# Runs both cores from a saved state and finds the first frame they disagree on.
+add_executable(state_parity src/app/state_parity.cpp)
+target_link_libraries(state_parity PRIVATE gba_host gba_vk)
+add_dependencies(state_parity shaders)
+target_compile_options(state_parity PRIVATE ${GBA_WARNINGS})
+
 # Known-answer checks for core bugs the test ROMs and parity harnesses missed.
 add_executable(regressions src/app/regressions.cpp)
 target_link_libraries(regressions PRIVATE gba_host)

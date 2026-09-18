@@ -115,13 +115,32 @@ int main(int argc, char** argv) {
         return 2;
     }
 
+    // GBA_RENDER_EVERY=n renders only every nth frame, the way the vectorised
+    // environment does: it renders the last frame of an action repeat and skips
+    // the rest. Rendering does not change the emulated machine, so this must not
+    // change what the game does -- and if it does, that explains a game
+    // behaving differently under training than under this tool.
+    const uint32_t renderEvery =
+        getenv("GBA_RENDER_EVERY") ? uint32_t(std::strtoul(getenv("GBA_RENDER_EVERY"), nullptr, 10)) : 1;
+
+    // GBA_SPLIT=n runs each frame as n calls, latching the keys before each,
+    // which is how the vectorised environment dispatches: it splits frames to
+    // stay under Windows' GPU watchdog. Splitting must not change the machine.
+    const uint32_t split =
+        getenv("GBA_SPLIT") ? std::max(1u, uint32_t(std::strtoul(getenv("GBA_SPLIT"), nullptr, 10))) : 1;
+
     uint64_t frames = 0;
     const auto run = [&](uint32_t mask, uint32_t count) {
         const uint32_t key = 0x03FFu & ~mask;  // active low
         for (uint32_t i = 0; i < count; ++i, ++frames) {
             pool.input[0] = key;
-            io_set16(st, REG_KEYINPUT, key);
-            step_cycles(st, CYCLES_PER_FRAME);
+            g_flags = (renderEvery <= 1 || (frames + 1) % renderEvery == 0) ? FLAG_RENDER : 0u;
+            for (uint32_t part = 0; part < split; ++part) {
+                io_set16(st, REG_KEYINPUT, key);
+                const uint32_t chunk = CYCLES_PER_FRAME / split +
+                                       (part + 1 == split ? CYCLES_PER_FRAME % split : 0u);
+                step_cycles(st, chunk);
+            }
         }
     };
 
@@ -170,6 +189,8 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "cannot write %s\n", outPath.c_str());
         return 1;
     }
+    std::printf("  ended at pc=%08X cpsr=%08X halted=%u scanline=%u\n", st.r[15], st.cpsr, st.halted,
+                st.scanline);
     std::printf("ran %llu frames (%.1f s of game time), wrote %s\n", (unsigned long long)frames,
                 double(frames) / 60.0, outPath.c_str());
 

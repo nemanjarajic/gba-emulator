@@ -111,8 +111,20 @@ CORE_FN void cpu_step(INOUT(GbaState) st) {
 // The GPU path calls this once per dispatch rather than looping to end of
 // frame, because macOS will kill a command buffer that runs too long.
 CORE_FN void step_cycles(INOUT(GbaState) st, U32 n) {
+    // The loop runs until the counter reaches the target exactly, rather than
+    // while it is less than it. st.cycles is 32 bits and wraps after 256
+    // seconds of emulated time; `st.cycles < target` was false immediately once
+    // the target had wrapped, so every later call emulated nothing at all and
+    // the machine stopped dead while the emulator raced. Pokemon Emerald froze
+    // on it 47 seconds into every training episode, the state those episodes
+    // start from being already 210 seconds old.
+    //
+    // Equality is safe because every iteration advances the counter by at most
+    // what remains: the CPU by one cycle, a halted machine by `remaining` at
+    // most. The subtractions below are modular, so they stay correct across the
+    // wrap, and nothing else reads st.cycles as an absolute time.
     U32 target = st.cycles + n;
-    while (st.cycles < target) {
+    while (st.cycles != target) {
         irq_check(st);
 
         if (st.halted != 0u) {
@@ -120,6 +132,14 @@ CORE_FN void step_cycles(INOUT(GbaState) st, U32 n) {
             // would wake us could never arrive. Skip to the end of the scanline
             // instead of crawling: a vblank wait is around 200,000 cycles, and
             // stepping those one at a time would dominate every dispatch.
+            //
+            // The skip stops at `target`, so a halted machine's timing depends
+            // on where the caller's run ends: a wake-up lands on a scanline
+            // boundary when the skip completes and on the caller's boundary
+            // when it does not. Callers must therefore run whole scanlines --
+            // CYCLES_PER_SCANLINE each -- or the same frame run in one call and
+            // in several will drift apart. Pokemon Emerald hung on the
+            // difference, waiting for an interrupt it never saw.
             U32 remaining = target - st.cycles;
             U32 to_line_end = CYCLES_PER_SCANLINE - st.line_cycle;
             U32 skip = (remaining < to_line_end) ? remaining : to_line_end;

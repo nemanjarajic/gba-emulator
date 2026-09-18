@@ -62,6 +62,28 @@ void testPpuVramMirror(GbaState& st, host::MemoryPool& pool) {
             bus_read8(st, 0x0601FFFFu));
 }
 
+// step_cycles counted towards st.cycles + n. The counter is 32 bits and wraps
+// after 256 seconds of emulated time; past the wrap the loop exited at once and
+// every later call emulated nothing, so the machine stopped while the emulator
+// raced. Pokemon Emerald froze 47 seconds into every training episode.
+void testCycleCounterWrap(GbaState& st) {
+    std::printf("step_cycles keeps running across the 32-bit cycle wrap\n");
+    const uint32_t before = 0xFFFFFF00u;  // 256 cycles short of wrapping
+    st.cycles = before;
+    st.halted = 0;
+    const uint32_t pc = st.r[15];
+    step_cycles(st, 4096u);
+    checkEq("ran the cycles asked for", st.cycles - before, 4096u);
+    checkEq("and executed instructions", uint32_t(st.r[15] != pc), 1u);
+
+    // Halted is the other path through the same loop.
+    st.cycles = before;
+    st.halted = 1;
+    step_cycles(st, 4096u);
+    checkEq("halted, it still advances time", st.cycles - before, 4096u);
+    st.halted = 0;
+}
+
 }  // namespace
 
 int main() {
@@ -75,6 +97,7 @@ int main() {
 
     testThumbFormat8(st);
     testPpuVramMirror(st, pool);
+    testCycleCounterWrap(st);
 
     if (g_failures) {
         std::printf("REGRESSIONS FAIL: %d of %d checks\n", g_failures, g_checks);
